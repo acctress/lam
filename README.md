@@ -36,6 +36,9 @@ The `compose` special form takes two functions and creates a new function that a
 
 # Syntax
 
+## Console
+- `putln "hello, world!"` - will print "hello world!" onto the console.
+
 ## Sections
 Partially applied functions which fix one operand.
 - `(+ x)` - add `x` to the argument.

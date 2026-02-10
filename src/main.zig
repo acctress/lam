@@ -7,6 +7,7 @@ const TokenType = enum(u8) {
     LParen,
     RParen,
     Number,
+    String,
     Symbol,
     LBracket,
     RBracket,
@@ -23,27 +24,33 @@ const Token = struct {
     value: []const u8,
 };
 
-const ValueType = enum { integer, list, function };
+const ValueType = enum { integer, list, string, function, unit }; // unit is void but void is a keyword already so cant us it
 
 const Value = union(ValueType) {
     integer: i64,
     list: []i64,
+    string: []const u8,
     function: *Node,
+    unit: void,
 
     pub fn fmt(self: Value, comptime f: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
         _ = f;
         _ = options;
 
+        try writer.print("\x1b[38;5;210m{s}\x1b[0m \x1b[38;5;146m", .{"\u{02192}"});
+
         switch (self) {
-            .function => |_| try writer.print("@function\n", .{}),
-            .integer => |i| try writer.print("{d}\n", .{i}),
+            .unit => {},
+            .function => |_| try writer.print("@function\x1b[0m\n", .{}),
+            .integer => |i| try writer.print("{d}\x1b[0m\n", .{i}),
+            .string => |s| try writer.print("{s}\x1b[0m\n", .{s}),
             .list => |l| {
                 try writer.print("[", .{});
                 for (l, 0..) |i, idx| {
                     try writer.print("{d}", .{i});
                     if (idx < l.len - 1) try writer.print(", ", .{});
                 }
-                try writer.print("]\n", .{});
+                try writer.print("]\x1b[0m\n", .{});
             },
         }
     }
@@ -51,22 +58,24 @@ const Value = union(ValueType) {
 
 const InstrincFn = *const fn (allocator: std.mem.Allocator, args: []const Value) anyerror!Value;
 
-const Instrinc = struct { name: []const u8, arg_count: usize, func: InstrincFn };
+const Instrinc = struct { name: []const u8, func: InstrincFn };
 
 const INSTRINCS = [_]Instrinc{
-    .{ .name = "map", .arg_count = 1, .func = instrinc_map },
-    .{ .name = "compose", .arg_count = 2, .func = instrinc_compose },
-    .{ .name = "list", .arg_count = 1, .func = instrinc_list },
-    .{ .name = "get", .arg_count = 1, .func = instrinc_get },
+    .{ .name = "map", .func = instrinc_map },
+    .{ .name = "compose", .func = instrinc_compose },
+    .{ .name = "list", .func = instrinc_list },
+    .{ .name = "get", .func = instrinc_get },
+    .{ .name = "putln", .func = instrinc_putln },
 };
 
-const NodeType = enum(u8) { partial, application, literal, list, composition, instrinc };
+const NodeType = enum(u8) { partial, application, literal, list, string, composition, instrinc };
 
 const Node = union(NodeType) {
     partial: Partial,
     application: Application,
     literal: i64,
     list: []i64,
+    string: []const u8,
     composition: Composition,
     instrinc: InstrincNode,
 
@@ -137,6 +146,21 @@ fn tokenize(allocator: std.mem.Allocator, source: []const u8) !ArrayList(Token) 
 
                 break :b .{ .type = .Symbol, .value = source[start .. start + len] };
             },
+            '"', '\'' => b: {
+                const quote_char = cur;
+                const start = pos + 1;
+                len = 1;
+                while (pos + len < source.len and source[pos + len] != quote_char) {
+                    len += 1;
+                }
+
+                const val = source[start .. pos + len];
+                if (pos + len < source.len) {
+                    len += 1;
+                }
+
+                break :b .{ .type = .String, .value = val };
+            },
             else => .{ .type = .EOF, .value = "" },
         };
 
@@ -201,6 +225,7 @@ const Parser = struct {
         const current = self.consume();
         return switch (current.type) {
             .Number => try self.alloc_node(.{ .literal = try std.fmt.parseInt(i64, current.value, 10) }),
+            .String => try self.alloc_node(.{ .string = current.value }),
             .Symbol => {
                 if (get_instrinc(current.value)) |_| {
                     const args = try self.allocator.alloc(*Node, 0);
@@ -256,25 +281,6 @@ const Parser = struct {
         return try self.alloc_node(.{ .application = .{ .func = left, .arg = right } });
     }
 
-    fn parse_special_form(self: *Parser, symbol: []const u8) !?*Node {
-        if (get_instrinc(symbol)) |instrinc| {
-            _ = self.consume();
-
-            var args: ArrayList(*Node) = .empty;
-            var idx: usize = 0;
-            while (idx < instrinc.arg_count) : (idx += 1) {
-                const arg = try self.parse_null_deno();
-                try args.append(self.allocator, arg);
-            }
-
-            _ = try self.expect(.RParen);
-
-            return try self.alloc_node(.{ .instrinc = .{ .name = symbol, .args = try args.toOwnedSlice(self.allocator) } });
-        }
-
-        return null;
-    }
-
     fn peek(self: *Parser) Token {
         if (self.pos >= self.tokens.items.len) return .{ .type = .EOF, .value = "" };
         return self.tokens.items[self.pos];
@@ -305,7 +311,7 @@ const Parser = struct {
         _ = self;
 
         return switch (token.type) {
-            .Number, .LParen, .LBracket => 10, // previous expression is being applied to these tokens as they start a new expr
+            .Number, .String, .LParen, .LBracket => 10, // previous expression is being applied to these tokens as they start a new expr
             else => 0,
         };
     }
@@ -317,6 +323,7 @@ fn eval(allocator: std.mem.Allocator, node: *Node) !Value {
     switch (node.*) {
         .literal => |i| return Value{ .integer = i },
         .list => |l| return Value{ .list = l },
+        .string => |s| return Value{ .string = s },
         .partial => return Value{ .function = node },
         .composition => return Value{ .function = node },
         .instrinc => return Value{ .function = node },
@@ -333,13 +340,6 @@ fn eval(allocator: std.mem.Allocator, node: *Node) !Value {
                     if (part_arg_val != .integer) return EvalError.TypeError;
 
                     const lhv = part_arg_val.integer;
-
-                    if (std.mem.eql(u8, p.op, "get")) {
-                        if (arg_val != .list) return EvalError.TypeError;
-                        if (lhv < 0 or lhv >= arg_val.list.len) return EvalError.OutOfBounds;
-
-                        return Value{ .integer = arg_val.list[@intCast(lhv)] };
-                    }
 
                     if (arg_val != .integer) return EvalError.TypeError;
 
@@ -362,7 +362,9 @@ fn eval(allocator: std.mem.Allocator, node: *Node) !Value {
                     switch (inner_result) {
                         .integer => |i| result_node.* = .{ .literal = i },
                         .list => |l| result_node.* = .{ .list = l },
+                        .string => |s| result_node.* = .{ .string = s },
                         .function => |f| result_node.* = f.*,
+                        .unit => {},
                     }
 
                     const outer_a = try allocator.create(Node);
@@ -382,24 +384,26 @@ fn eval(allocator: std.mem.Allocator, node: *Node) !Value {
                     switch (arg_val) {
                         .integer => |int| a_node.* = .{ .literal = int },
                         .list => |lst| a_node.* = .{ .list = lst },
+                        .string => |s| a_node.* = .{ .string = s },
                         .function => |f| a_node.* = f.*,
+                        .unit => {},
                     }
+
                     try n_args.append(allocator, a_node);
 
-                    if (n_args.items.len == 2) {
-                        var e_args: ArrayList(Value) = .empty;
-                        for (n_args.items) |n| {
-                            try e_args.append(allocator, try eval(allocator, n));
-                        }
-
-                        return try instrinc_f.func(allocator, e_args.items);
+                    var e_args: ArrayList(Value) = .empty;
+                    for (n_args.items) |n| {
+                        try e_args.append(allocator, try eval(allocator, n));
                     }
 
-                    // partial application otherwise
-                    const n_node = try allocator.create(Node);
-                    n_node.* = .{ .instrinc = .{ .name = i.name, .args = try n_args.toOwnedSlice(allocator) } };
+                    const result = instrinc_f.func(allocator, e_args.items) catch {
+                        const n_node = try allocator.create(Node);
+                        n_node.* = .{ .instrinc = .{ .name = i.name, .args = try n_args.toOwnedSlice(allocator) } };
 
-                    return Value{ .function = n_node };
+                        return Value{ .function = n_node };
+                    };
+
+                    return result;
                 },
 
                 else => return EvalError.TypeError,
@@ -422,30 +426,51 @@ pub fn main() !void {
     var stdin_reader = std.fs.File.stdin().reader(&stdin_buf);
     const stdin: *std.io.Reader = &stdin_reader.interface;
 
+    const v = "version 0.1.0";
+    const reset = "\x1b[0m";
+
+    try stdout.print("\x1b[38;2;255;179;186m" ++ "  _                 \n", .{});
+    try stdout.print("\x1b[38;2;255;223;186m" ++ " | |                \n", .{});
+    try stdout.print("\x1b[38;2;255;255;186m" ++ " | | __ _ _ __ ___    \n", .{});
+    try stdout.print("\x1b[38;2;186;255;201m" ++ " | |/ _` | '_ ` _ \\      {s}\n", .{v});
+    try stdout.print("\x1b[38;2;186;225;255m" ++ " | | (_| | | | | | |\n", .{});
+    try stdout.print("\x1b[38;2;223;186;255m" ++ " |_|\\__,_|_| |_| |_|\n", .{});
+    try stdout.print(reset ++ "\n", .{});
+
+    try stdout.print("\n", .{});
+
     repl: while (true) {
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         defer arena.deinit();
         const allocator = arena.allocator();
 
-        try stdout.print("{s} ", .{"\u{03bb}"});
+        try stdout.print("\x1b[38;5;219m{s}\x1b[0m ", .{"\u{03bb}"});
         try stdout.flush();
 
         const raw_line = try stdin.takeDelimiter('\n') orelse unreachable;
         const line = std.mem.trim(u8, raw_line, "\r");
 
-        if (std.mem.eql(u8, line, "quit")) break :repl;
+        if (std.mem.eql(u8, line, "exit")) break :repl;
 
         var parser: Parser = try .init(allocator, line);
 
-        while (try parser.parse()) |n| {
-            const result = eval(allocator, n) catch |err| {
-                try stdout.print("error: {}\n", .{err});
-                break :repl;
+        while (true) {
+            const n = parser.parse() catch |err| {
+                try stdout.print("\x1b[38;5;211m{s} parse error:\x1b[0m {}\n", .{ "\u{26A0}", err });
+                continue :repl;
             };
 
-            try result.fmt("{}\n", .{}, stdout);
+            const node = n orelse break;
+            // std.debug.print("parsed a node\n", .{});
+            const result = eval(allocator, node) catch |err| {
+                try stdout.print("\x1b[38;5;211m{s} eval error:\x1b[0m {}\n", .{ "\u{26A0}", err });
+                continue :repl;
+            };
 
-            // try stdout.print("{}\n", .{result.fmt(comptime f: []const u8, options: Options, writer: anytype)});
+            if (result != .unit) {
+                try result.fmt("{}\n", .{}, stdout);
+            }
+
             try stdout.flush();
         }
     }
@@ -489,6 +514,16 @@ fn instrinc_get(allocator: std.mem.Allocator, args: []const Value) !Value {
     if (idx < 0 or idx >= list.len) return EvalError.OutOfBounds;
 
     return Value{ .integer = list[@intCast(idx)] };
+}
+
+fn instrinc_putln(allocator: std.mem.Allocator, args: []const Value) !Value {
+    _ = allocator;
+    if (args.len != 1) return EvalError.TypeError;
+    if (args[0] != .string) return EvalError.TypeError;
+
+    std.debug.print("{s}\n", .{args[0].string});
+
+    return Value{ .unit = {} };
 }
 
 fn instrinc_compose(allocator: std.mem.Allocator, args: []const Value) !Value {
