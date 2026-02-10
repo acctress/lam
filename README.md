@@ -4,15 +4,13 @@ Written in Zig.
 
 # Example
 ```
-(+ 1) 5
+λ map (compose (+ 10) (* 2)) [1, 2, 3]                                                                             
+[12, 14, 16]
 ```
 
-```
-λ (+ 1) 5
-6
-```
+This demonstrates `map` applying a `composed` function to each element of the list.
+It multiplies each element by `2`, and adds `10` to each produced result. The order of composition is righ-to-left.
 
-This is an application, an application consists of a section `(+ 1)` and a literal `5`. Section `(+ 1)` is a partially applied addition operator - its a function which takes an argument and adds one onto that value. Since `5` is applied to this section, the result will be `6`.
 
 ```
 λ (list 50) 10                                      
@@ -22,7 +20,7 @@ This is an application, an application consists of a section `(+ 1)` and a liter
 Uses the `list` instrinct to creates a list of ten integers.
 
 ```
-λ (compose (+ 1) (* 2)) 5
+λ compose (+ 1) (* 2) 5
 11
 ```
 
@@ -53,8 +51,14 @@ Apply a section (function) to a value.
 - `(get 1) [10, 20, 30]` - will retrieve the item at index `1` in the list.
 
 ## Instrincts
-Atomics of lam, functions which cannot be broken down into simple expressions. Built-in.
-- `(list 10) 5` - creates a list of `5` integers with the value `10`.
+Atomics of lam, functions which cannot be broken down into simple expressions. Built-in curried functions.
+
+- `map fn list` - apply function to each element
+- `compose f g` - create function that applies `g` then `f`
+- `list value count` - create list of `count` elements with `value`
+- `get index list` - retrieve element at `index`
+
+## Complex Examples
 
 ## Composition
 Compose two functions into a single function that applies in the right-to-left sequence.
@@ -70,3 +74,11 @@ Compositions can also be chained for pipelining:
 
 This will retrieve the first element in the list `7`, multiply it by `2`, then add `100`.
 Resulting in `114`.
+
+### Pipeline
+```
+λ get 0 (map (compose (+ 10) (* 2)) [1, 2, 3])
+12
+```
+
+Maps composed function over list, then retrieves the first result with `get`.
