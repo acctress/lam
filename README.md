@@ -14,6 +14,13 @@ Written in Zig.
 
 This is an application, an application consists of a section `(+ 1)` and a literal `5`. Section `(+ 1)` is a partially applied addition operator - its a function which takes an argument and adds one onto that value. Since `5` is applied to this section, the result will be `6`.
 
+```
+λ (list 50) 10                                      
+[50, 50, 50, 50, 50, 50, 50, 50, 50, 50]
+```
+
+Uses the `list` instrinct to creates a list of ten integers.
+
 ## Syntax
 
 ### Sections
