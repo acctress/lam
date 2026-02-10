@@ -29,5 +29,5 @@ Apply a section (function) to a value.
 - `(* 2) 6` - will take 6 and multiply it by 2.
 
 ### Instrincts
-Atomics of lam, functions which cannot be broken down into simple expressions are built-in.
+Atomics of lam, functions which cannot be broken down into simple expressions. Built-in.
 - `(list 10) 5` - creates a list of `5` integers with the value `10`.
