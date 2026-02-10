@@ -4,7 +4,7 @@ Written in Zig.
 
 # Example
 ```
-λ map (compose (+ 10) (* 2)) [1, 2, 3]                                                                             
+λ map (compose (+ 10) (* 2)) [1, 2, 3]
 [12, 14, 16]
 ```
 
