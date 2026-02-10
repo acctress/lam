@@ -2,6 +2,9 @@
 A small functional programming language with partial application, operator sections, and function composite.
 Written in Zig.
 
+<img width="477" height="280" alt="image" src="https://github.com/user-attachments/assets/249c9209-8ab9-4d03-a85e-865a95b02b2b" />
+
+
 # Example
 ```
 λ map (compose (+ 10) (* 2)) [1, 2, 3]
