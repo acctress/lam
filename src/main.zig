@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const lam = @import("lam");
 const ArrayList = std.ArrayList;
 
@@ -125,13 +126,13 @@ const Parser = struct {
         return p;
     }
 
-    pub fn parse(self: *Parser) !ArrayList(*Node) {
-        while (!self.check(.EOF)) {
-            const exp = try self.parse_expr();
-            try self.ast.append(self.allocator, exp);
-        }
+    pub fn parse(self: *Parser) !?*Node {
+        if (self.check(.EOF)) return null;
 
-        return self.ast;
+        const exp = try self.parse_expr();
+        try self.ast.append(self.allocator, exp);
+
+        return exp;
     }
 
     fn parse_expr(self: *Parser) !*Node {
@@ -139,7 +140,7 @@ const Parser = struct {
         const left = try self.parse_primary();
 
         // if it's followed by an expression its an application
-        if (self.check(.Number) or self.check(.LParen)) {
+        while (self.check(.Number) or self.check(.LParen)) {
             const right = try self.parse_primary();
             return try self.alloc_node(.{ .application = .{ .func = left, .arg = right } });
         }
@@ -211,7 +212,7 @@ fn eval(node: *Node) EvalError!i64 {
 
                 return switch (op) {
                     '+' => sect_arg + aval,
-                    '-' => sect_arg - aval,
+                    '-' => aval - sect_arg,
                     '*' => sect_arg * aval,
                     '/' => @divTrunc(sect_arg, aval),
                     else => EvalError.Unreachable,
@@ -224,44 +225,44 @@ fn eval(node: *Node) EvalError!i64 {
 }
 
 pub fn main() !void {
+    if (builtin.os.tag == .windows) {
+        const win = std.os.windows;
+        _ = win.kernel32.SetConsoleOutputCP(65001);
+    }
+
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
     const allocator = gpa.allocator();
-    const source = "(+ 1) 5";
 
-    var parser: Parser = try .init(allocator, source);
-    defer parser.deinit();
+    var stdout_buf: [1024]u8 = undefined;
+    var stdout_writer = std.fs.File.stdout().writer(&stdout_buf);
+    const stdout: *std.io.Writer = &stdout_writer.interface;
 
-    std.debug.print("source: {s}\n", .{source});
+    var stdin_buf: [1024]u8 = undefined;
+    var stdin_reader = std.fs.File.stdin().reader(&stdin_buf);
+    const stdin: *std.io.Reader = &stdin_reader.interface;
 
-    const ast = try parser.parse();
-    for (ast.items) |node| {
-        switch (node.*) {
-            .section => {
-                std.debug.print("section:\n", .{});
-                std.debug.print("   op: {c}\n", .{node.section.op});
-                std.debug.print("   arg: ", .{});
+    repl: while (true) {
+        try stdout.print("{s} ", .{"\u{03bb}"});
+        try stdout.flush();
 
-                switch (node.section.arg.*) {
-                    .literal => std.debug.print("{d}\n", .{node.section.arg.*.literal}),
-                    else => std.debug.print("?\n", .{}),
-                }
-            },
-            .application => {
-                std.debug.print("application:\n", .{});
-                std.debug.print("   fn: {*}\n", .{&node.application.func});
-                std.debug.print("   arg: ", .{});
+        const raw_line = try stdin.takeDelimiter('\n') orelse unreachable;
+        const line = std.mem.trim(u8, raw_line, "\r");
 
-                switch (node.application.arg.*) {
-                    .literal => std.debug.print("{d}\n", .{node.application.arg.*.literal}),
-                    else => std.debug.print("?\n", .{}),
-                }
-            },
-            else => break,
+        if (std.mem.eql(u8, line, "quit")) break :repl;
+
+        var parser: Parser = try .init(allocator, line);
+        defer parser.deinit();
+
+        while (try parser.parse()) |n| {
+            const result = eval(n) catch |err| {
+                try stdout.print("error: {}\n", .{err});
+                break :repl;
+            };
+
+            try stdout.print("{}\n", .{result});
+            try stdout.flush();
         }
     }
-
-    const result = try eval(ast.items[0]);
-    std.debug.print("eval: {}", .{result});
 }

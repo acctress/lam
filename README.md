@@ -8,12 +8,8 @@ Written in Zig.
 ```
 
 ```
-❯ zig build run
-source: (+ 1) 5
-application:
-   fn: *main.Node@1d74eed0060
-   arg: 5
-eval: 6
+λ (+ 1) 5
+6
 ```
 
 This is an application, an application consists of a section `(+ 1)` and a literal `5`. Section `(+ 1)` is a partially applied addition operator - its a function which takes an argument and adds one onto that value. Since `5` is applied to this section, the result will be `6`.
