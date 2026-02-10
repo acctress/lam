@@ -8,6 +8,9 @@ const TokenType = enum(u8) {
     RParen,
     Number,
     Symbol,
+    LBracket,
+    RBracket,
+    Comma,
     Add,
     Sub,
     Mul,
@@ -46,12 +49,13 @@ const Value = union(ValueType) {
     }
 };
 
-const NodeType = enum(u8) { partial, application, literal, composition };
+const NodeType = enum(u8) { partial, application, literal, list, composition };
 
 const Node = union(NodeType) {
     partial: Partial,
     application: Application,
     literal: i64,
+    list: []i64,
     composition: Composition,
 
     const Partial = struct {
@@ -87,6 +91,9 @@ fn tokenize(allocator: std.mem.Allocator, source: []const u8) !ArrayList(Token) 
             '-' => .{ .type = .Sub, .value = "-" },
             '*' => .{ .type = .Mul, .value = "*" },
             '/' => .{ .type = .Div, .value = "/" },
+            '[' => .{ .type = .LBracket, .value = "[" },
+            ']' => .{ .type = .RBracket, .value = "]" },
+            ',' => .{ .type = .Comma, .value = "," },
             '0'...'9' => b: {
                 const start = pos;
                 len = 1;
@@ -117,13 +124,12 @@ fn tokenize(allocator: std.mem.Allocator, source: []const u8) !ArrayList(Token) 
     return tokens;
 }
 
-const ParserError = error{ UnexpectedToken, OutOfMemory, InvalidCharacter, Overflow };
+const ParserError = error{ UnexpectedToken, InvalidCharacter, Overflow, OutOfMemory };
 
 const Parser = struct {
     allocator: std.mem.Allocator,
     ast: ArrayList(*Node),
     tokens: ArrayList(Token),
-    current: ?Token,
     pos: usize,
 
     pub fn init(allocator: std.mem.Allocator, source: []const u8) !Parser {
@@ -132,204 +138,206 @@ const Parser = struct {
             .allocator = allocator,
             .ast = .empty,
             .tokens = tokens,
-            .current = tokens.items[0],
             .pos = 0,
         };
     }
 
     pub fn deinit(self: *Parser) void {
-        for (self.ast.items) |node| {
-            self.free_node(node);
-        }
-
         self.tokens.deinit(self.allocator);
         self.ast.deinit(self.allocator);
     }
 
-    fn free_node(self: *Parser, node: *Node) void {
-        switch (node.*) {
-            .partial => |s| {
-                self.free_node(s.arg);
-                // self.allocator.destroy(s.arg);
-            },
-            .application => |a| {
-                self.free_node(a.func);
-                self.free_node(a.arg);
-            },
-            .composition => |c| {
-                self.free_node(c.outer);
-                self.free_node(c.inner);
-            },
-            .literal => {},
-        }
-
-        self.allocator.destroy(node);
-    }
-
-    fn alloc_node(self: *Parser, node: Node) !*Node {
-        const p = try self.allocator.create(Node);
-        p.* = node;
-        return p;
-    }
-
     pub fn parse(self: *Parser) !?*Node {
-        if (self.check(.EOF)) return null;
+        if (self.peek().type == .EOF) return null;
 
-        const exp = try self.parse_expr();
-        try self.ast.append(self.allocator, exp);
-
-        return exp;
+        const node = try self.parse_expr(0);
+        try self.ast.append(self.allocator, node);
+        return node;
     }
 
-    fn parse_expr(self: *Parser) ParserError!*Node {
-        // partial, literal...
-        var left = try self.parse_primary();
+    pub fn parse_expr(self: *Parser, prec: u8) !*Node {
+        var left = try self.parse_null_deno();
 
-        // if it's followed by an expression its an application
-        while (self.check(.Number) or self.check(.LParen)) {
-            const right = try self.parse_primary();
-            left = try self.alloc_node(.{ .application = .{ .func = left, .arg = right } }); // now we can chain applications!
+        while (true) {
+            const next = self.peek();
+            // treat the next token as an infix operator if
+            // the token looks like the start of an expression
+            const next_pr = self.get_precedence(next);
+            if (prec >= next_pr) break;
+
+            left = try self.parse_left_deno(left);
         }
 
         return left;
     }
 
-    fn parse_primary(self: *Parser) ParserError!*Node {
-        if (self.check(.LParen)) {
-            // changed to be less restrictive so we can parse grouped expressions
-            const next = self.tokens.items[self.pos + 1];
-            const is_partial = switch (next.type) {
-                .Add, .Sub, .Mul, .Div, .Symbol => true,
-                else => false,
-            };
+    fn parse_null_deno(self: *Parser) ParserError!*Node {
+        // null denominator
+        const current = self.consume();
+        return switch (current.type) {
+            .Number => try self.alloc_node(.{ .literal = try std.fmt.parseInt(i64, current.value, 10) }),
+            .LBracket => {
+                // list
+                var items: ArrayList(i64) = .empty;
+                while (self.peek().type != .RBracket) {
+                    const value = try std.fmt.parseInt(i64, (try self.expect(.Number)).value, 10);
+                    try items.append(self.allocator, value);
+                    if (self.peek().type == .Comma) _ = self.consume();
+                }
 
-            if (is_partial) {
-                return try self.alloc_node(.{ .partial = try self.parse_partial() });
-            } else {
-                _ = try self.expect(.LParen);
-                const node = try self.parse_expr();
-                _ = try self.expect(.RParen);
-                return node;
-            }
-        } else if (self.check(.Number)) {
-            return try self.alloc_node(.{ .literal = try std.fmt.parseInt(i64, (try self.expect(.Number)).value, 10) });
-        }
+                _ = try self.expect(.RBracket);
+                return try self.alloc_node(.{ .list = try items.toOwnedSlice(self.allocator) });
+            },
+            .LParen => {
+                const next = self.peek();
 
-        return ParserError.UnexpectedToken;
+                if (next.type == .Symbol) {
+                    if (try self.parse_special_form(next.value)) |n| {
+                        return n;
+                    }
+                }
+
+                const is_op = switch (next.type) {
+                    .Add, .Sub, .Mul, .Div, .Symbol => true,
+                    else => false,
+                };
+
+                if (is_op) {
+                    const optk = self.consume();
+                    const arg = try self.parse_expr(0);
+
+                    _ = try self.expect(.RParen);
+
+                    return try self.alloc_node(.{ .partial = .{ .op = optk.value, .arg = arg } });
+                } else {
+                    const node = try self.parse_expr(0);
+
+                    _ = try self.expect(.RParen);
+
+                    return node;
+                }
+            },
+
+            else => error.UnexpectedToken,
+        };
     }
 
-    fn parse_partial(self: *Parser) error{ UnexpectedToken, OutOfMemory, InvalidCharacter, Overflow }!Node.Partial {
-        _ = try self.expect(.LParen);
-
-        const op = self.current.?;
-        if (op.type != .Symbol and
-            op.type != .Add and
-            op.type != .Sub and
-            op.type != .Mul and
-            op.type != .Div) return error.UnexpectedToken;
-
-        const op_val = op.value;
-        _ = self.eat();
-
-        const arg = try self.parse_expr();
-
-        _ = try self.expect(.RParen);
-
-        return .{ .op = op_val, .arg = arg };
+    fn parse_left_deno(self: *Parser, left: *Node) ParserError!*Node {
+        // the only infix op is an application, left associative.
+        const right = try self.parse_expr(10);
+        return try self.alloc_node(.{ .application = .{ .func = left, .arg = right } });
     }
 
-    fn eat(self: *Parser) Token {
-        if (self.check(.EOF)) {
-            std.debug.print("unexpected eof", .{});
-            std.process.exit(1);
+    fn parse_special_form(self: *Parser, symbol: []const u8) !?*Node {
+        if (std.mem.eql(u8, symbol, "compose")) {
+            _ = self.consume();
+
+            const outer = try self.parse_null_deno();
+            const inner = try self.parse_null_deno();
+
+            _ = try self.expect(.RParen);
+            return try self.alloc_node(.{ .composition = .{ .outer = outer, .inner = inner } });
         }
 
-        const prev = self.current.?;
-        self.pos += 1;
-        self.current = self.tokens.items[self.pos];
+        return null;
+    }
+
+    fn peek(self: *Parser) Token {
+        if (self.pos >= self.tokens.items.len) return .{ .type = .EOF, .value = "" };
+        return self.tokens.items[self.pos];
+    }
+
+    fn consume(self: *Parser) Token {
+        const prev = self.peek();
+        if (prev.type != .EOF) self.pos += 1;
         return prev;
     }
 
-    fn check(self: *Parser, typ: TokenType) bool {
-        return self.current.?.type == typ;
+    fn expect(self: *Parser, typ: TokenType) error{UnexpectedToken}!Token {
+        const prev = self.consume();
+        if (prev.type != typ) {
+            std.debug.print("expected {}, got {}\n", .{ typ, prev.type });
+            return error.UnexpectedToken;
+        }
+        return prev;
     }
 
-    fn expect(self: *Parser, typ: TokenType) ParserError!Token {
-        if (!self.check(typ)) {
-            std.debug.print("expected {}, got {}\n", .{ typ, self.current.?.type });
-            return ParserError.UnexpectedToken;
-        }
+    fn alloc_node(self: *Parser, node: Node) !*Node {
+        const n = try self.allocator.create(Node);
+        n.* = node;
+        return n;
+    }
 
-        return self.eat();
+    fn get_precedence(self: *Parser, token: Token) u8 {
+        _ = self;
+
+        return switch (token.type) {
+            .Number, .LParen, .LBracket => 10, // previous expression is being applied to these tokens as they start a new expr
+            else => 0,
+        };
     }
 };
 
-const EvalError = error{ Unreachable, TypeError };
+const EvalError = error{ Unreachable, TypeError, OutOfBounds };
 
 fn eval(allocator: std.mem.Allocator, node: *Node) !Value {
     switch (node.*) {
         .literal => |i| return Value{ .integer = i },
+        .list => |l| return Value{ .list = l },
         .partial => return Value{ .function = node },
         .composition => return Value{ .function = node },
         .application => |a| {
             const fun_val = try eval(allocator, a.func);
             const arg_val = try eval(allocator, a.arg);
 
-            // evaluate standard applications
-            // this is where we have a function and an integer
-            if (fun_val == .function and arg_val == .integer) {
-                const n = fun_val.function;
+            if (fun_val != .function) return EvalError.TypeError;
+            const fun_node = fun_val.function;
 
-                switch (n.*) {
-                    .partial => |partial| {
-                        const partial_arg = try eval(allocator, partial.arg);
+            switch (fun_node.*) {
+                .partial => |p| {
+                    const part_arg_val = try eval(allocator, p.arg);
+                    if (part_arg_val != .integer) return EvalError.TypeError;
 
-                        // left-hand value...
-                        const lhv = partial_arg.integer;
-                        const rhv = arg_val.integer;
-                        const op = partial.op;
+                    const lhv = part_arg_val.integer;
 
-                        if (std.mem.eql(u8, op, "list")) {
-                            const arr = try allocator.alloc(i64, @intCast(rhv));
-                            @memset(arr, lhv);
-                            return Value{ .list = arr };
-                        }
+                    if (std.mem.eql(u8, p.op, "get")) {
+                        if (arg_val != .list) return EvalError.TypeError;
+                        if (lhv < 0 or lhv >= arg_val.list.len) return EvalError.OutOfBounds;
 
-                        return Value{ .integer = switch (op[0]) {
-                            '+' => lhv + rhv,
-                            '-' => rhv - lhv,
-                            '*' => lhv * rhv,
-                            '/' => @divTrunc(lhv, rhv),
-                            else => 0,
-                        } };
-                    },
-                    .composition => |comp| {
-                        var inner_a = Node{ .application = .{ .func = comp.inner, .arg = a.arg } };
-                        const inner_result = try eval(allocator, &inner_a);
+                        return Value{ .integer = arg_val.list[@intCast(lhv)] };
+                    }
 
-                        // and now apply the outer function result to the inner result
-                        // and just wrap it back into a literal for evaluation
-                        var outer_arg = Node{ .literal = inner_result.integer };
-                        var outer_a = Node{ .application = .{ .func = comp.outer, .arg = &outer_arg } };
+                    if (arg_val != .integer) return EvalError.TypeError;
 
-                        return try eval(allocator, &outer_a);
-                    },
-                    else => return EvalError.TypeError,
-                }
+                    const rhv = arg_val.integer;
+                    return Value{ .integer = switch (p.op[0]) {
+                        '+' => lhv + rhv,
+                        '-' => rhv - lhv,
+                        '*' => lhv * rhv,
+                        '/' => @divTrunc(lhv, rhv),
+                        else => return EvalError.TypeError,
+                    } };
+                },
+
+                .composition => |c| {
+                    const inner_a = try allocator.create(Node);
+                    inner_a.* = .{ .application = .{ .func = c.inner, .arg = a.arg } };
+                    const inner_result = try eval(allocator, inner_a);
+
+                    const result_node = try allocator.create(Node);
+                    switch (inner_result) {
+                        .integer => |i| result_node.* = .{ .literal = i },
+                        .list => |l| result_node.* = .{ .list = l },
+                        .function => |f| result_node.* = f.*,
+                    }
+
+                    const outer_a = try allocator.create(Node);
+                    outer_a.* = .{ .application = .{ .func = c.outer, .arg = result_node } };
+                    return try eval(allocator, outer_a);
+                },
+
+                else => return EvalError.TypeError,
             }
-
-            // evaluate composition
-            // this is where we have a function and a function
-            if (fun_val == .function and arg_val == .function) {
-                // it is only created in the evaluation because
-                // composition isn't a "symbol" we parse, it's living rule
-                // which occurs during runtime
-                const c_node = try allocator.create(Node);
-                c_node.* = .{ .composition = .{ .inner = fun_val.function, .outer = arg_val.function } };
-                return Value{ .function = c_node };
-            }
-
-            return EvalError.TypeError;
         },
     }
 }
@@ -340,11 +348,6 @@ pub fn main() !void {
         _ = win.kernel32.SetConsoleOutputCP(65001);
     }
 
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-
-    const allocator = arena.allocator();
-
     var stdout_buf: [1024]u8 = undefined;
     var stdout_writer = std.fs.File.stdout().writer(&stdout_buf);
     const stdout: *std.io.Writer = &stdout_writer.interface;
@@ -354,6 +357,10 @@ pub fn main() !void {
     const stdin: *std.io.Reader = &stdin_reader.interface;
 
     repl: while (true) {
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer arena.deinit();
+        const allocator = arena.allocator();
+
         try stdout.print("{s} ", .{"\u{03bb}"});
         try stdout.flush();
 
@@ -363,7 +370,6 @@ pub fn main() !void {
         if (std.mem.eql(u8, line, "quit")) break :repl;
 
         var parser: Parser = try .init(allocator, line);
-        defer parser.deinit();
 
         while (try parser.parse()) |n| {
             const result = eval(allocator, n) catch |err| {
