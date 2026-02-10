@@ -20,18 +20,20 @@ const Token = struct {
     value: []const u8,
 };
 
-const ValueType = enum { integer, list };
+const ValueType = enum { integer, list, function };
 
 const Value = union(ValueType) {
     integer: i64,
     list: []i64,
+    function: *Node,
 
     pub fn fmt(self: Value, comptime f: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
         _ = f;
         _ = options;
 
         switch (self) {
-            .integer => |i| try writer.print("{d}", .{i}),
+            .function => |_| try writer.print("@function\n", .{}),
+            .integer => |i| try writer.print("{d}\n", .{i}),
             .list => |l| {
                 try writer.print("[", .{});
                 for (l, 0..) |i, idx| {
@@ -44,12 +46,13 @@ const Value = union(ValueType) {
     }
 };
 
-const NodeType = enum(u8) { partial, application, literal };
+const NodeType = enum(u8) { partial, application, literal, composition };
 
 const Node = union(NodeType) {
     partial: Partial,
     application: Application,
     literal: i64,
+    composition: Composition,
 
     const Partial = struct {
         op: []const u8,
@@ -57,6 +60,11 @@ const Node = union(NodeType) {
     };
 
     const Application = struct { func: *Node, arg: *Node };
+
+    const Composition = struct {
+        outer: *Node,
+        inner: *Node,
+    };
 };
 
 fn tokenize(allocator: std.mem.Allocator, source: []const u8) !ArrayList(Token) {
@@ -109,7 +117,7 @@ fn tokenize(allocator: std.mem.Allocator, source: []const u8) !ArrayList(Token) 
     return tokens;
 }
 
-const ParserError = error{UnexpectedToken};
+const ParserError = error{ UnexpectedToken, OutOfMemory, InvalidCharacter, Overflow };
 
 const Parser = struct {
     allocator: std.mem.Allocator,
@@ -148,6 +156,10 @@ const Parser = struct {
                 self.free_node(a.func);
                 self.free_node(a.arg);
             },
+            .composition => |c| {
+                self.free_node(c.outer);
+                self.free_node(c.inner);
+            },
             .literal => {},
         }
 
@@ -169,22 +181,36 @@ const Parser = struct {
         return exp;
     }
 
-    fn parse_expr(self: *Parser) !*Node {
+    fn parse_expr(self: *Parser) ParserError!*Node {
         // partial, literal...
-        const left = try self.parse_primary();
+        var left = try self.parse_primary();
 
         // if it's followed by an expression its an application
         while (self.check(.Number) or self.check(.LParen)) {
             const right = try self.parse_primary();
-            return try self.alloc_node(.{ .application = .{ .func = left, .arg = right } });
+            left = try self.alloc_node(.{ .application = .{ .func = left, .arg = right } }); // now we can chain applications!
         }
 
         return left;
     }
 
-    fn parse_primary(self: *Parser) !*Node {
+    fn parse_primary(self: *Parser) ParserError!*Node {
         if (self.check(.LParen)) {
-            return try self.alloc_node(.{ .partial = try self.parse_partial() });
+            // changed to be less restrictive so we can parse grouped expressions
+            const next = self.tokens.items[self.pos + 1];
+            const is_partial = switch (next.type) {
+                .Add, .Sub, .Mul, .Div, .Symbol => true,
+                else => false,
+            };
+
+            if (is_partial) {
+                return try self.alloc_node(.{ .partial = try self.parse_partial() });
+            } else {
+                _ = try self.expect(.LParen);
+                const node = try self.parse_expr();
+                _ = try self.expect(.RParen);
+                return node;
+            }
         } else if (self.check(.Number)) {
             return try self.alloc_node(.{ .literal = try std.fmt.parseInt(i64, (try self.expect(.Number)).value, 10) });
         }
@@ -238,45 +264,72 @@ const Parser = struct {
     }
 };
 
-const EvalError = error{ CannotEvalPartial, Unreachable, TypeError };
+const EvalError = error{ Unreachable, TypeError };
 
 fn eval(allocator: std.mem.Allocator, node: *Node) !Value {
     switch (node.*) {
         .literal => |i| return Value{ .integer = i },
-        .partial => return EvalError.CannotEvalPartial,
+        .partial => return Value{ .function = node },
+        .composition => return Value{ .function = node },
         .application => |a| {
-            const fun = a.func.*;
-            const aval = try eval(allocator, a.arg);
+            const fun_val = try eval(allocator, a.func);
+            const arg_val = try eval(allocator, a.arg);
 
-            if (aval != .integer) return EvalError.TypeError;
-            const val = aval.integer;
+            // evaluate standard applications
+            // this is where we have a function and an integer
+            if (fun_val == .function and arg_val == .integer) {
+                const n = fun_val.function;
 
-            if (fun == .partial) {
-                const sect_arg = try eval(allocator, fun.partial.arg);
-                if (sect_arg != .integer) return EvalError.TypeError;
-                const arg = sect_arg.integer;
-                const op = fun.partial.op;
+                switch (n.*) {
+                    .partial => |partial| {
+                        const partial_arg = try eval(allocator, partial.arg);
 
-                // list
-                if (std.mem.eql(u8, op, "list")) {
-                    const arr = try allocator.alloc(i64, @intCast(val));
-                    @memset(arr, arg);
-                    return Value{ .list = arr };
+                        // left-hand value...
+                        const lhv = partial_arg.integer;
+                        const rhv = arg_val.integer;
+                        const op = partial.op;
+
+                        if (std.mem.eql(u8, op, "list")) {
+                            const arr = try allocator.alloc(i64, @intCast(rhv));
+                            @memset(arr, lhv);
+                            return Value{ .list = arr };
+                        }
+
+                        return Value{ .integer = switch (op[0]) {
+                            '+' => lhv + rhv,
+                            '-' => rhv - lhv,
+                            '*' => lhv * rhv,
+                            '/' => @divTrunc(lhv, rhv),
+                            else => 0,
+                        } };
+                    },
+                    .composition => |comp| {
+                        var inner_a = Node{ .application = .{ .func = comp.inner, .arg = a.arg } };
+                        const inner_result = try eval(allocator, &inner_a);
+
+                        // and now apply the outer function result to the inner result
+                        // and just wrap it back into a literal for evaluation
+                        var outer_arg = Node{ .literal = inner_result.integer };
+                        var outer_a = Node{ .application = .{ .func = comp.outer, .arg = &outer_arg } };
+
+                        return try eval(allocator, &outer_a);
+                    },
+                    else => return EvalError.TypeError,
                 }
-
-                const lhv = sect_arg.integer;
-                const rhv = aval.integer;
-
-                return Value{ .integer = switch (op[0]) {
-                    '+' => lhv + rhv,
-                    '-' => rhv - lhv,
-                    '*' => lhv * rhv,
-                    '/' => @divTrunc(lhv, rhv),
-                    else => 0,
-                } };
-            } else {
-                return EvalError.Unreachable;
             }
+
+            // evaluate composition
+            // this is where we have a function and a function
+            if (fun_val == .function and arg_val == .function) {
+                // it is only created in the evaluation because
+                // composition isn't a "symbol" we parse, it's living rule
+                // which occurs during runtime
+                const c_node = try allocator.create(Node);
+                c_node.* = .{ .composition = .{ .inner = fun_val.function, .outer = arg_val.function } };
+                return Value{ .function = c_node };
+            }
+
+            return EvalError.TypeError;
         },
     }
 }

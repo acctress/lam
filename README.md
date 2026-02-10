@@ -21,6 +21,19 @@ This is an application, an application consists of a section `(+ 1)` and a liter
 
 Uses the `list` instrinct to creates a list of ten integers.
 
+```
+λ ((+ 1) (+ 10)) 5
+16
+```
+
+This is point free function composition, it allows us to compose the two partial functions into a single execution pipeline. Here is the breakdown:
+
+```
+= (+ 1)((+ 10) 5)
+= (+ 1)(15)
+= 16
+```
+
 ## Syntax
 
 ### Sections
