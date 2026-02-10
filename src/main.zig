@@ -7,6 +7,7 @@ const TokenType = enum(u8) {
     LParen,
     RParen,
     Number,
+    Symbol,
     Add,
     Sub,
     Mul,
@@ -19,15 +20,39 @@ const Token = struct {
     value: []const u8,
 };
 
-const NodeType = enum(u8) { section, application, literal };
+const ValueType = enum { integer, list };
+
+const Value = union(ValueType) {
+    integer: i64,
+    list: []i64,
+
+    pub fn fmt(self: Value, comptime f: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = f;
+        _ = options;
+
+        switch (self) {
+            .integer => |i| try writer.print("{d}", .{i}),
+            .list => |l| {
+                try writer.print("[", .{});
+                for (l, 0..) |i, idx| {
+                    try writer.print("{d}", .{i});
+                    if (idx < l.len - 1) try writer.print(", ", .{});
+                }
+                try writer.print("]\n", .{});
+            },
+        }
+    }
+};
+
+const NodeType = enum(u8) { partial, application, literal };
 
 const Node = union(NodeType) {
-    section: Section,
+    partial: Partial,
     application: Application,
     literal: i64,
 
-    const Section = struct {
-        op: u8,
+    const Partial = struct {
+        op: []const u8,
         arg: *Node,
     };
 
@@ -62,6 +87,15 @@ fn tokenize(allocator: std.mem.Allocator, source: []const u8) !ArrayList(Token) 
                 }
 
                 break :b .{ .type = .Number, .value = source[start .. start + len] };
+            },
+            'a'...'z', 'A'...'Z' => b: {
+                const start = pos;
+                len = 1;
+                while (start + len < source.len and std.ascii.isAlphabetic(source[start + len])) {
+                    len += 1;
+                }
+
+                break :b .{ .type = .Symbol, .value = source[start .. start + len] };
             },
             else => .{ .type = .EOF, .value = "" },
         };
@@ -106,7 +140,7 @@ const Parser = struct {
 
     fn free_node(self: *Parser, node: *Node) void {
         switch (node.*) {
-            .section => |s| {
+            .partial => |s| {
                 self.free_node(s.arg);
                 // self.allocator.destroy(s.arg);
             },
@@ -136,7 +170,7 @@ const Parser = struct {
     }
 
     fn parse_expr(self: *Parser) !*Node {
-        // section, literal...
+        // partial, literal...
         const left = try self.parse_primary();
 
         // if it's followed by an expression its an application
@@ -150,7 +184,7 @@ const Parser = struct {
 
     fn parse_primary(self: *Parser) !*Node {
         if (self.check(.LParen)) {
-            return try self.alloc_node(.{ .section = try self.parse_section() });
+            return try self.alloc_node(.{ .partial = try self.parse_partial() });
         } else if (self.check(.Number)) {
             return try self.alloc_node(.{ .literal = try std.fmt.parseInt(i64, (try self.expect(.Number)).value, 10) });
         }
@@ -158,17 +192,24 @@ const Parser = struct {
         return ParserError.UnexpectedToken;
     }
 
-    fn parse_section(self: *Parser) error{ UnexpectedToken, OutOfMemory, InvalidCharacter, Overflow }!Node.Section {
+    fn parse_partial(self: *Parser) error{ UnexpectedToken, OutOfMemory, InvalidCharacter, Overflow }!Node.Partial {
         _ = try self.expect(.LParen);
 
-        const op: u8 = self.current.?.value[0];
+        const op = self.current.?;
+        if (op.type != .Symbol and
+            op.type != .Add and
+            op.type != .Sub and
+            op.type != .Mul and
+            op.type != .Div) return error.UnexpectedToken;
+
+        const op_val = op.value;
         _ = self.eat();
 
         const arg = try self.parse_expr();
 
         _ = try self.expect(.RParen);
 
-        return .{ .op = op, .arg = arg };
+        return .{ .op = op_val, .arg = arg };
     }
 
     fn eat(self: *Parser) Token {
@@ -197,26 +238,42 @@ const Parser = struct {
     }
 };
 
-const EvalError = error{ CannotEvalSection, Unreachable };
+const EvalError = error{ CannotEvalPartial, Unreachable, TypeError };
 
-fn eval(node: *Node) EvalError!i64 {
+fn eval(allocator: std.mem.Allocator, node: *Node) !Value {
     switch (node.*) {
-        .literal => |i| return i,
-        .section => return EvalError.CannotEvalSection,
+        .literal => |i| return Value{ .integer = i },
+        .partial => return EvalError.CannotEvalPartial,
         .application => |a| {
             const fun = a.func.*;
-            const aval = try eval(a.arg);
-            if (fun == .section) {
-                const sect_arg = try eval(fun.section.arg);
-                const op = fun.section.op;
+            const aval = try eval(allocator, a.arg);
 
-                return switch (op) {
-                    '+' => sect_arg + aval,
-                    '-' => aval - sect_arg,
-                    '*' => sect_arg * aval,
-                    '/' => @divTrunc(sect_arg, aval),
-                    else => EvalError.Unreachable,
-                };
+            if (aval != .integer) return EvalError.TypeError;
+            const val = aval.integer;
+
+            if (fun == .partial) {
+                const sect_arg = try eval(allocator, fun.partial.arg);
+                if (sect_arg != .integer) return EvalError.TypeError;
+                const arg = sect_arg.integer;
+                const op = fun.partial.op;
+
+                // list
+                if (std.mem.eql(u8, op, "list")) {
+                    const arr = try allocator.alloc(i64, @intCast(val));
+                    @memset(arr, arg);
+                    return Value{ .list = arr };
+                }
+
+                const lhv = sect_arg.integer;
+                const rhv = aval.integer;
+
+                return Value{ .integer = switch (op[0]) {
+                    '+' => lhv + rhv,
+                    '-' => rhv - lhv,
+                    '*' => lhv * rhv,
+                    '/' => @divTrunc(lhv, rhv),
+                    else => 0,
+                } };
             } else {
                 return EvalError.Unreachable;
             }
@@ -230,10 +287,10 @@ pub fn main() !void {
         _ = win.kernel32.SetConsoleOutputCP(65001);
     }
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
 
-    const allocator = gpa.allocator();
+    const allocator = arena.allocator();
 
     var stdout_buf: [1024]u8 = undefined;
     var stdout_writer = std.fs.File.stdout().writer(&stdout_buf);
@@ -256,12 +313,14 @@ pub fn main() !void {
         defer parser.deinit();
 
         while (try parser.parse()) |n| {
-            const result = eval(n) catch |err| {
+            const result = eval(allocator, n) catch |err| {
                 try stdout.print("error: {}\n", .{err});
                 break :repl;
             };
 
-            try stdout.print("{}\n", .{result});
+            try result.fmt("{}\n", .{}, stdout);
+
+            // try stdout.print("{}\n", .{result.fmt(comptime f: []const u8, options: Options, writer: anytype)});
             try stdout.flush();
         }
     }

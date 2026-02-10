@@ -27,3 +27,7 @@ Partially applied functions which fix one operand.
 Apply a section (function) to a value.
 - `(+ 1) 5` - will take 5 and add 1 onto it.
 - `(* 2) 6` - will take 6 and multiply it by 2.
+
+### Instrincts
+Atomics of lam, functions which cannot be broken down into simple expressions are built-in.
+- `(list 10) 5` - creates a list of `5` integers with the value `10`.
