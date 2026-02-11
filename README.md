@@ -1,6 +1,9 @@
 # lam
-A small functional programming language with partial application, operator sections, and function composite.
-Written in Zig.
+A minimal, point-free functional Lisp written in Zig. Auto-currying, operator sections, and right-to-left function composition.
+
+<img width="654" height="189" alt="image" src="https://github.com/user-attachments/assets/27969ae8-0723-4d13-91a1-15a776a05cd7" />
+
+
 
 # Example
 ```
