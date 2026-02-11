@@ -8,9 +8,11 @@ const TokenType = enum(u8) {
     RParen,
     Number,
     String,
+    Char,
     Symbol,
     LBracket,
     RBracket,
+    DoubleDot,
     Comma,
     Add,
     Sub,
@@ -24,12 +26,13 @@ const Token = struct {
     value: []const u8,
 };
 
-const ValueType = enum { integer, list, string, function, unit }; // unit is void but void is a keyword already so cant us it
+const ValueType = enum { integer, list, string, char, function, unit }; // unit is void but void is a keyword already so cant us it
 
 const Value = union(ValueType) {
     integer: i64,
     list: []i64,
     string: []const u8,
+    char: u8,
     function: *Node,
     unit: void,
 
@@ -44,6 +47,7 @@ const Value = union(ValueType) {
             .function => |_| try writer.print("@function\x1b[0m\n", .{}),
             .integer => |i| try writer.print("{d}\x1b[0m\n", .{i}),
             .string => |s| try writer.print("{s}\x1b[0m\n", .{s}),
+            .char => |c| try writer.print("{c}\x1b[0m\n", .{c}),
             .list => |l| {
                 try writer.print("[", .{});
                 for (l, 0..) |i, idx| {
@@ -66,9 +70,11 @@ const INSTRINCS = [_]Instrinc{
     .{ .name = "list", .func = instrinc_list },
     .{ .name = "get", .func = instrinc_get },
     .{ .name = "putln", .func = instrinc_putln },
+    .{ .name = "str", .func = instrinc_str },
+    .{ .name = "chars", .func = instrinc_chars },
 };
 
-const NodeType = enum(u8) { partial, application, literal, list, string, composition, instrinc };
+const NodeType = enum(u8) { partial, application, literal, list, string, char, composition, instrinc };
 
 const Node = union(NodeType) {
     partial: Partial,
@@ -76,6 +82,7 @@ const Node = union(NodeType) {
     literal: i64,
     list: []i64,
     string: []const u8,
+    char: u8,
     composition: Composition,
     instrinc: InstrincNode,
 
@@ -105,7 +112,9 @@ fn get_instrinc(name: []const u8) ?Instrinc {
     return null;
 }
 
-fn tokenize(allocator: std.mem.Allocator, source: []const u8) !ArrayList(Token) {
+const TokenizeError = error{ UnterminatedStringLiteral, InvalidCharacterLiteral, OutOfMemory };
+
+fn tokenize(allocator: std.mem.Allocator, source: []const u8) TokenizeError!ArrayList(Token) {
     var tokens: ArrayList(Token) = .empty;
     var pos: usize = 0;
 
@@ -128,6 +137,36 @@ fn tokenize(allocator: std.mem.Allocator, source: []const u8) !ArrayList(Token) 
             '[' => .{ .type = .LBracket, .value = "[" },
             ']' => .{ .type = .RBracket, .value = "]" },
             ',' => .{ .type = .Comma, .value = "," },
+            '.' => b: {
+                if (pos + 1 < source.len and source[pos + 1] == '.') {
+                    len = 2;
+                    break :b .{ .type = .DoubleDot, .value = ".." };
+                }
+
+                continue;
+            },
+            '\'' => b: {
+                const start = pos;
+                len = 1;
+
+                if (start + 1 >= source.len) {
+                    return TokenizeError.UnterminatedStringLiteral;
+                }
+
+                if (!std.ascii.isAlphanumeric(source[start + 1])) {
+                    return TokenizeError.InvalidCharacterLiteral;
+                }
+
+                len += 1;
+
+                if (start + len >= source.len or source[start + len] != '\'') {
+                    return TokenizeError.InvalidCharacterLiteral;
+                }
+
+                const slice = source[start + 1 .. start + 2];
+                len += 1;
+                break :b .{ .type = .Char, .value = slice };
+            },
             '0'...'9' => b: {
                 const start = pos;
                 len = 1;
@@ -146,18 +185,19 @@ fn tokenize(allocator: std.mem.Allocator, source: []const u8) !ArrayList(Token) 
 
                 break :b .{ .type = .Symbol, .value = source[start .. start + len] };
             },
-            '"', '\'' => b: {
-                const quote_char = cur;
+            '"' => b: {
                 const start = pos + 1;
                 len = 1;
-                while (pos + len < source.len and source[pos + len] != quote_char) {
+                while (pos + len < source.len and source[pos + len] != '"') {
                     len += 1;
                 }
 
                 const val = source[start .. pos + len];
-                if (pos + len < source.len) {
-                    len += 1;
+                if (pos + len >= source.len) {
+                    return TokenizeError.UnterminatedStringLiteral;
                 }
+
+                len += 1;
 
                 break :b .{ .type = .String, .value = val };
             },
@@ -226,6 +266,7 @@ const Parser = struct {
         return switch (current.type) {
             .Number => try self.alloc_node(.{ .literal = try std.fmt.parseInt(i64, current.value, 10) }),
             .String => try self.alloc_node(.{ .string = current.value }),
+            .Char => try self.alloc_node(.{ .char = current.value[0] }),
             .Symbol => {
                 if (get_instrinc(current.value)) |_| {
                     const args = try self.allocator.alloc(*Node, 0);
@@ -235,16 +276,59 @@ const Parser = struct {
                 return error.UnexpectedToken;
             },
             .LBracket => {
-                // list
-                var items: ArrayList(i64) = .empty;
-                while (self.peek().type != .RBracket) {
-                    const value = try std.fmt.parseInt(i64, (try self.expect(.Number)).value, 10);
-                    try items.append(self.allocator, value);
-                    if (self.peek().type == .Comma) _ = self.consume();
+                // list or range list
+                if (self.peek().type == .Number) {
+                    const start = self.consume();
+
+                    if (self.peek().type == .DoubleDot) {
+                        _ = self.consume();
+                        // past [<num>..
+                        const end = try self.expect(.Number);
+                        const start_v = try std.fmt.parseInt(i64, start.value, 10);
+                        const end_v = try std.fmt.parseInt(i64, end.value, 10);
+
+                        // 1 is the default step
+                        var step: i64 = 1;
+                        // if there is a comma after the range, we expect for the user
+                        // to define a step
+                        if (self.peek().type == .Comma) {
+                            _ = self.consume();
+                            const step_t = try self.expect(.Number);
+                            step = try std.fmt.parseInt(i64, step_t.value, 10);
+                        }
+
+                        _ = try self.expect(.RBracket);
+
+                        if (step <= 0) return error.InvalidCharacter;
+                        const count = @divTrunc((end_v - start_v), step) + 1;
+                        if (count <= 0) return error.InvalidCharacter;
+
+                        var items = try self.allocator.alloc(i64, @intCast(count));
+                        var value = start_v;
+                        for (0..@intCast(count)) |i| {
+                            items[i] = value;
+                            value += step;
+                        }
+
+                        return try self.alloc_node(.{ .list = items });
+                    } else {
+                        var items: ArrayList(i64) = .empty;
+                        const first = try std.fmt.parseInt(i64, start.value, 10);
+                        try items.append(self.allocator, first);
+
+                        while (self.peek().type != .RBracket) {
+                            const value = try std.fmt.parseInt(i64, (try self.expect(.Number)).value, 10);
+                            try items.append(self.allocator, value);
+                            if (self.peek().type == .Comma) _ = self.consume();
+                        }
+
+                        _ = try self.expect(.RBracket);
+                        return try self.alloc_node(.{ .list = try items.toOwnedSlice(self.allocator) });
+                    }
                 }
 
                 _ = try self.expect(.RBracket);
-                return try self.alloc_node(.{ .list = try items.toOwnedSlice(self.allocator) });
+                return try self.alloc_node(.{ .list = try self.allocator.alloc(i64, 0) });
             },
             .LParen => {
                 const next = self.peek();
@@ -324,6 +408,7 @@ fn eval(allocator: std.mem.Allocator, node: *Node) !Value {
         .literal => |i| return Value{ .integer = i },
         .list => |l| return Value{ .list = l },
         .string => |s| return Value{ .string = s },
+        .char => |c| return Value{ .char = c },
         .partial => return Value{ .function = node },
         .composition => return Value{ .function = node },
         .instrinc => return Value{ .function = node },
@@ -363,6 +448,7 @@ fn eval(allocator: std.mem.Allocator, node: *Node) !Value {
                         .integer => |i| result_node.* = .{ .literal = i },
                         .list => |l| result_node.* = .{ .list = l },
                         .string => |s| result_node.* = .{ .string = s },
+                        .char => |ch| result_node.* = .{ .char = ch },
                         .function => |f| result_node.* = f.*,
                         .unit => {},
                     }
@@ -385,6 +471,7 @@ fn eval(allocator: std.mem.Allocator, node: *Node) !Value {
                         .integer => |int| a_node.* = .{ .literal = int },
                         .list => |lst| a_node.* = .{ .list = lst },
                         .string => |s| a_node.* = .{ .string = s },
+                        .char => |ch| a_node.* = .{ .char = ch },
                         .function => |f| a_node.* = f.*,
                         .unit => {},
                     }
@@ -412,6 +499,10 @@ fn eval(allocator: std.mem.Allocator, node: *Node) !Value {
     }
 }
 
+fn log_error(writer: *std.io.Writer, error_type: []const u8, message: []const u8) !void {
+    try writer.print("\x1b[38;5;211m{s} {s}:\x1b[0m {s}\n", .{ "\u{26A0}", error_type, message });
+}
+
 pub fn main() !void {
     if (builtin.os.tag == .windows) {
         const win = std.os.windows;
@@ -426,7 +517,7 @@ pub fn main() !void {
     var stdin_reader = std.fs.File.stdin().reader(&stdin_buf);
     const stdin: *std.io.Reader = &stdin_reader.interface;
 
-    const v = "version 0.1.0";
+    const v = "version 0.1.1";
     const reset = "\x1b[0m";
 
     try stdout.print("\x1b[38;2;255;179;186m" ++ "  _                 \n", .{});
@@ -436,7 +527,6 @@ pub fn main() !void {
     try stdout.print("\x1b[38;2;186;225;255m" ++ " | | (_| | | | | | |\n", .{});
     try stdout.print("\x1b[38;2;223;186;255m" ++ " |_|\\__,_|_| |_| |_|\n", .{});
     try stdout.print(reset ++ "\n", .{});
-
     try stdout.print("\n", .{});
 
     repl: while (true) {
@@ -452,18 +542,25 @@ pub fn main() !void {
 
         if (std.mem.eql(u8, line, "exit")) break :repl;
 
-        var parser: Parser = try .init(allocator, line);
+        var parser: Parser = Parser.init(allocator, line) catch |err| {
+            switch (err) {
+                error.UnterminatedStringLiteral => try log_error(stdout, "lexer error", "unterminated string literal"),
+                error.InvalidCharacterLiteral => try log_error(stdout, "lexer error", "character literals must contain one alphanumeric character"),
+                else => try log_error(stdout, "error", @errorName(err)),
+            }
+            continue :repl;
+        };
 
         while (true) {
             const n = parser.parse() catch |err| {
-                try stdout.print("\x1b[38;5;211m{s} parse error:\x1b[0m {}\n", .{ "\u{26A0}", err });
+                try log_error(stdout, "parse error", @errorName(err));
                 continue :repl;
             };
 
             const node = n orelse break;
             // std.debug.print("parsed a node\n", .{});
             const result = eval(allocator, node) catch |err| {
-                try stdout.print("\x1b[38;5;211m{s} eval error:\x1b[0m {}\n", .{ "\u{26A0}", err });
+                try log_error(stdout, "eval error", @errorName(err));
                 continue :repl;
             };
 
@@ -506,14 +603,22 @@ fn instrinc_get(allocator: std.mem.Allocator, args: []const Value) !Value {
 
     if (args.len != 2) return EvalError.TypeError;
     if (args[0] != .integer) return EvalError.TypeError;
-    if (args[1] != .list) return EvalError.TypeError;
+    if (args[1] != .list and args[1] != .string) return EvalError.TypeError;
 
     const idx = args[0].integer;
-    const list = args[1].list;
+    switch (args[1]) {
+        .list => |list| {
+            if (idx < 0 or idx >= list.len) return EvalError.OutOfBounds;
+            return Value{ .integer = list[@intCast(idx)] };
+        },
 
-    if (idx < 0 or idx >= list.len) return EvalError.OutOfBounds;
+        .string => |str| {
+            if (idx < 0 or idx >= str.len) return EvalError.OutOfBounds;
+            return Value{ .char = str[@intCast(idx)] };
+        },
 
-    return Value{ .integer = list[@intCast(idx)] };
+        else => return EvalError.TypeError,
+    }
 }
 
 fn instrinc_putln(allocator: std.mem.Allocator, args: []const Value) !Value {
@@ -524,6 +629,32 @@ fn instrinc_putln(allocator: std.mem.Allocator, args: []const Value) !Value {
     std.debug.print("{s}\n", .{args[0].string});
 
     return Value{ .unit = {} };
+}
+
+fn instrinc_str(allocator: std.mem.Allocator, args: []const Value) !Value {
+    if (args.len != 1) return EvalError.TypeError;
+    if (args[0] != .list) return EvalError.TypeError;
+
+    const list = args[0].list;
+    const result = try allocator.alloc(u8, list.len);
+    for (list, 0..) |n, i| {
+        result[i] = @intCast(n);
+    }
+
+    return Value{ .string = result };
+}
+
+fn instrinc_chars(allocator: std.mem.Allocator, args: []const Value) !Value {
+    if (args.len != 1) return EvalError.TypeError;
+    if (args[0] != .string) return EvalError.TypeError;
+
+    const str = args[0].string;
+    const result = try allocator.alloc(i64, str.len);
+    for (str, 0..) |c, i| {
+        result[i] = c;
+    }
+
+    return Value{ .list = result };
 }
 
 fn instrinc_compose(allocator: std.mem.Allocator, args: []const Value) !Value {

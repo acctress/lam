@@ -84,4 +84,34 @@ Resulting in `114`.
 12
 ```
 
-Maps composed function over list, then retrieves the first result with `get`.
+### Lists
+Lists in lam allow both explicit notation and range syntax with optional steps.
+- `[1, 2, 3, 4, 5]` - is an explicit list.
+- `[1..10]` - is a range notated list.
+- `[1..10,2]` - is a range notated list with an explicit step.
+
+### Strings and Chars
+Under the hood, strings are just an array of chars, which is why we can do some cool things with them using the `str` instrinc.
+```
+λ str (list 97 5)
+→ aaaaa
+```
+This will create a list of five integers, all with the value of `97` (a in ASCII), the `str` instrinc take's a list as it's argument, and converts that list into a string.
+
+We can get creative with it:
+```
+λ str (map (+ 32) [72, 69, 76, 76, 79])
+→ hello
+```
+
+Or:
+```
+λ putln (str (list 97 5))
+aaaaa
+```
+
+And:
+```
+λ str (map (+ 65) [0..25])
+→ ABCDEFGHIJKLMNOPQRSTUVWXYZ
+```
