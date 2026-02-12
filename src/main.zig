@@ -518,7 +518,7 @@ pub fn main() !void {
     var stdin_reader = std.fs.File.stdin().reader(&stdin_buf);
     const stdin: *std.io.Reader = &stdin_reader.interface;
 
-    const v = "version 0.1.1";
+    const v = "version 1.1.1";
     const reset = "\x1b[0m";
 
     try stdout.print("\x1b[38;2;255;179;186m" ++ "  _                 \n", .{});

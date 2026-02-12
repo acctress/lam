@@ -3,7 +3,12 @@ A minimal, point-free functional Lisp written in Zig. Auto-currying, operator se
 
 <img width="654" height="189" alt="image" src="https://github.com/user-attachments/assets/27969ae8-0723-4d13-91a1-15a776a05cd7" />
 
+# Recent Changes
 
+* Updated to version identifier to correct standard.
+* Updated to version `1.1.1`
+    - Fixed generic list parsing.
+    - Added bounds check to `str` instrinc.
 
 # Example
 ```
