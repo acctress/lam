@@ -8,7 +8,7 @@ A minimal, point-free functional Lisp written in Zig. Auto-currying, operator se
 * Updated to version identifier to correct standard.
 * Updated to version `1.1.1`
     - Fixed generic list parsing.
-    - Added bounds check to `str` instrinc.
+    - Added bounds check to `str` intrinsic.
 
 # Example
 ```
@@ -25,7 +25,7 @@ It multiplies each element by `2`, and adds `10` to each produced result. The or
 [50, 50, 50, 50, 50, 50, 50, 50, 50, 50]
 ```
 
-Uses the `list` instrinct to creates a list of ten integers.
+Uses the `list` intrinsic to creates a list of ten integers.
 
 ```
 λ compose (+ 1) (* 2) 5
@@ -61,7 +61,7 @@ Apply a section (function) to a value.
 - `(* 2) 6` - will take 6 and multiply it by 2.
 - `(get 1) [10, 20, 30]` - will retrieve the item at index `1` in the list.
 
-## Instrincts
+## intrinsics
 Atomics of lam, functions which cannot be broken down into simple expressions. Built-in curried functions.
 
 - `map fn list` - apply function to each element
@@ -99,12 +99,12 @@ Lists in lam allow both explicit notation and range syntax with optional steps.
 - `[1..10,2]` - is a range notated list with an explicit step.
 
 ### Strings and Chars
-Under the hood, strings are just an array of chars, which is why we can do some cool things with them using the `str` instrinc.
+Under the hood, strings are just an array of chars, which is why we can do some cool things with them using the `str` intrinsic.
 ```
 λ str (list 97 5)
 → aaaaa
 ```
-This will create a list of five integers, all with the value of `97` (a in ASCII), the `str` instrinc take's a list as it's argument, and converts that list into a string.
+This will create a list of five integers, all with the value of `97` (a in ASCII), the `str` intrinsic take's a list as it's argument, and converts that list into a string.
 
 We can get creative with it:
 ```

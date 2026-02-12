@@ -59,21 +59,21 @@ const Value = union(ValueType) {
     }
 };
 
-const InstrincFn = *const fn (allocator: std.mem.Allocator, args: []const Value) anyerror!Value;
+const intrinsicFn = *const fn (allocator: std.mem.Allocator, args: []const Value) anyerror!Value;
 
-const Instrinc = struct { name: []const u8, func: InstrincFn };
+const intrinsic = struct { name: []const u8, func: intrinsicFn };
 
-const INSTRINCS = [_]Instrinc{
-    .{ .name = "map", .func = instrinc_map },
-    .{ .name = "compose", .func = instrinc_compose },
-    .{ .name = "list", .func = instrinc_list },
-    .{ .name = "get", .func = instrinc_get },
-    .{ .name = "putln", .func = instrinc_putln },
-    .{ .name = "str", .func = instrinc_str },
-    .{ .name = "chars", .func = instrinc_chars },
+const intrinsicS = [_]intrinsic{
+    .{ .name = "map", .func = intrinsic_map },
+    .{ .name = "compose", .func = intrinsic_compose },
+    .{ .name = "list", .func = intrinsic_list },
+    .{ .name = "get", .func = intrinsic_get },
+    .{ .name = "putln", .func = intrinsic_putln },
+    .{ .name = "str", .func = intrinsic_str },
+    .{ .name = "chars", .func = intrinsic_chars },
 };
 
-const NodeType = enum(u8) { partial, application, literal, list, string, char, composition, instrinc };
+const NodeType = enum(u8) { partial, application, literal, list, string, char, composition, intrinsic };
 
 const Node = union(NodeType) {
     partial: Partial,
@@ -83,7 +83,7 @@ const Node = union(NodeType) {
     string: []const u8,
     char: u8,
     composition: Composition,
-    instrinc: InstrincNode,
+    intrinsic: intrinsicNode,
 
     const Partial = struct {
         op: []const u8,
@@ -97,14 +97,14 @@ const Node = union(NodeType) {
         inner: *Node,
     };
 
-    const InstrincNode = struct {
+    const intrinsicNode = struct {
         name: []const u8,
         args: []*Node,
     };
 };
 
-fn get_instrinc(name: []const u8) ?Instrinc {
-    for (INSTRINCS) |i| {
+fn get_intrinsic(name: []const u8) ?intrinsic {
+    for (intrinsicS) |i| {
         if (std.mem.eql(u8, i.name, name)) return i;
     }
 
@@ -267,9 +267,9 @@ const Parser = struct {
             .String => try self.alloc_node(.{ .string = current.value }),
             .Char => try self.alloc_node(.{ .char = current.value[0] }),
             .Symbol => {
-                if (get_instrinc(current.value)) |_| {
+                if (get_intrinsic(current.value)) |_| {
                     const args = try self.allocator.alloc(*Node, 0);
-                    return try self.alloc_node(.{ .instrinc = .{ .name = current.value, .args = args } });
+                    return try self.alloc_node(.{ .intrinsic = .{ .name = current.value, .args = args } });
                 }
 
                 return error.UnexpectedToken;
@@ -336,7 +336,7 @@ const Parser = struct {
 
                 const is_op = switch (next.type) {
                     .Add, .Sub, .Mul, .Div => true,
-                    .Symbol => get_instrinc(next.value) == null,
+                    .Symbol => get_intrinsic(next.value) == null,
                     else => false,
                 };
 
@@ -412,7 +412,7 @@ fn eval(allocator: std.mem.Allocator, node: *Node) !Value {
         .char => |c| return Value{ .char = c },
         .partial => return Value{ .function = node },
         .composition => return Value{ .function = node },
-        .instrinc => return Value{ .function = node },
+        .intrinsic => return Value{ .function = node },
         .application => |a| {
             const fun_val = try eval(allocator, a.func);
             const arg_val = try eval(allocator, a.arg);
@@ -459,8 +459,8 @@ fn eval(allocator: std.mem.Allocator, node: *Node) !Value {
                     return try eval(allocator, outer_a);
                 },
 
-                .instrinc => |i| {
-                    const instrinc_f = get_instrinc(i.name) orelse return EvalError.TypeError;
+                .intrinsic => |i| {
+                    const intrinsic_f = get_intrinsic(i.name) orelse return EvalError.TypeError;
 
                     var n_args: ArrayList(*Node) = .empty;
                     for (i.args) |n| {
@@ -484,9 +484,9 @@ fn eval(allocator: std.mem.Allocator, node: *Node) !Value {
                         try e_args.append(allocator, try eval(allocator, n));
                     }
 
-                    const result = instrinc_f.func(allocator, e_args.items) catch {
+                    const result = intrinsic_f.func(allocator, e_args.items) catch {
                         const n_node = try allocator.create(Node);
-                        n_node.* = .{ .instrinc = .{ .name = i.name, .args = try n_args.toOwnedSlice(allocator) } };
+                        n_node.* = .{ .intrinsic = .{ .name = i.name, .args = try n_args.toOwnedSlice(allocator) } };
 
                         return Value{ .function = n_node };
                     };
@@ -574,7 +574,7 @@ pub fn main() !void {
     }
 }
 
-fn instrinc_map(allocator: std.mem.Allocator, args: []const Value) !Value {
+fn intrinsic_map(allocator: std.mem.Allocator, args: []const Value) !Value {
     if (args.len != 2) return EvalError.TypeError;
     if (args[0] != .function) return EvalError.TypeError;
     if (args[1] != .list) return EvalError.TypeError;
@@ -599,7 +599,7 @@ fn instrinc_map(allocator: std.mem.Allocator, args: []const Value) !Value {
     return Value{ .list = result_list };
 }
 
-fn instrinc_get(allocator: std.mem.Allocator, args: []const Value) !Value {
+fn intrinsic_get(allocator: std.mem.Allocator, args: []const Value) !Value {
     _ = allocator;
 
     if (args.len != 2) return EvalError.TypeError;
@@ -622,7 +622,7 @@ fn instrinc_get(allocator: std.mem.Allocator, args: []const Value) !Value {
     }
 }
 
-fn instrinc_putln(allocator: std.mem.Allocator, args: []const Value) !Value {
+fn intrinsic_putln(allocator: std.mem.Allocator, args: []const Value) !Value {
     _ = allocator;
     if (args.len != 1) return EvalError.TypeError;
     if (args[0] != .string) return EvalError.TypeError;
@@ -632,7 +632,7 @@ fn instrinc_putln(allocator: std.mem.Allocator, args: []const Value) !Value {
     return Value{ .unit = {} };
 }
 
-fn instrinc_str(allocator: std.mem.Allocator, args: []const Value) !Value {
+fn intrinsic_str(allocator: std.mem.Allocator, args: []const Value) !Value {
     if (args.len != 1) return EvalError.TypeError;
     if (args[0] != .list) return EvalError.TypeError;
 
@@ -646,7 +646,7 @@ fn instrinc_str(allocator: std.mem.Allocator, args: []const Value) !Value {
     return Value{ .string = result };
 }
 
-fn instrinc_chars(allocator: std.mem.Allocator, args: []const Value) !Value {
+fn intrinsic_chars(allocator: std.mem.Allocator, args: []const Value) !Value {
     if (args.len != 1) return EvalError.TypeError;
     if (args[0] != .string) return EvalError.TypeError;
 
@@ -659,7 +659,7 @@ fn instrinc_chars(allocator: std.mem.Allocator, args: []const Value) !Value {
     return Value{ .list = result };
 }
 
-fn instrinc_compose(allocator: std.mem.Allocator, args: []const Value) !Value {
+fn intrinsic_compose(allocator: std.mem.Allocator, args: []const Value) !Value {
     if (args.len != 2) return EvalError.TypeError;
     if (args[0] != .function or args[1] != .function) return EvalError.TypeError;
 
@@ -669,7 +669,7 @@ fn instrinc_compose(allocator: std.mem.Allocator, args: []const Value) !Value {
     return Value{ .function = c_node };
 }
 
-fn instrinc_list(allocator: std.mem.Allocator, args: []const Value) !Value {
+fn intrinsic_list(allocator: std.mem.Allocator, args: []const Value) !Value {
     if (args.len != 2) return EvalError.TypeError;
     if (args[0] != .integer or args[1] != .integer) return EvalError.TypeError;
 
