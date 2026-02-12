@@ -59,11 +59,11 @@ const Value = union(ValueType) {
     }
 };
 
-const intrinsicFn = *const fn (allocator: std.mem.Allocator, args: []const Value) anyerror!Value;
+const IntrinsicFN = *const fn (allocator: std.mem.Allocator, args: []const Value) anyerror!Value;
 
-const intrinsic = struct { name: []const u8, func: intrinsicFn };
+const Intrinsic = struct { name: []const u8, func: IntrinsicFN };
 
-const intrinsicS = [_]intrinsic{
+const INTRINSICS = [_]Intrinsic{
     .{ .name = "map", .func = intrinsic_map },
     .{ .name = "compose", .func = intrinsic_compose },
     .{ .name = "list", .func = intrinsic_list },
@@ -103,8 +103,8 @@ const Node = union(NodeType) {
     };
 };
 
-fn get_intrinsic(name: []const u8) ?intrinsic {
-    for (intrinsicS) |i| {
+fn get_intrinsic(name: []const u8) ?Intrinsic {
+    for (INTRINSICS) |i| {
         if (std.mem.eql(u8, i.name, name)) return i;
     }
 
