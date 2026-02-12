@@ -1,6 +1,5 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const lam = @import("lam");
 const ArrayList = std.ArrayList;
 
 const TokenType = enum(u8) {
@@ -317,9 +316,11 @@ const Parser = struct {
                         try items.append(self.allocator, first);
 
                         while (self.peek().type != .RBracket) {
+                            if (self.peek().type == .Comma) _ = self.consume();
+                            if (self.peek().type == .RBracket) break; // ^this caused a lot of headache...
+
                             const value = try std.fmt.parseInt(i64, (try self.expect(.Number)).value, 10);
                             try items.append(self.allocator, value);
-                            if (self.peek().type == .Comma) _ = self.consume();
                         }
 
                         _ = try self.expect(.RBracket);
@@ -638,6 +639,7 @@ fn instrinc_str(allocator: std.mem.Allocator, args: []const Value) !Value {
     const list = args[0].list;
     const result = try allocator.alloc(u8, list.len);
     for (list, 0..) |n, i| {
+        if (n < 0 or n > std.math.maxInt(u8)) return EvalError.TypeError;
         result[i] = @intCast(n);
     }
 
