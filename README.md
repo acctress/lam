@@ -6,9 +6,8 @@ A minimal, point-free functional Lisp written in Zig. Auto-currying, operator se
 # Recent Changes
 
 * Updated to version identifier to correct standard.
-* Updated to version `1.1.1`
-    - Fixed generic list parsing.
-    - Added bounds check to `str` intrinsic.
+* Updated to version `1.1.2`
+    - Refactored source code into seperate files.
 
 # Example
 ```
