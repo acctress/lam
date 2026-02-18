@@ -4,7 +4,7 @@ const rt = @import("rt.zig");
 const Parser = @import("parser.zig").Parser;
 const ArrayList = std.ArrayList;
 
-const LAM_VERSION: [13]u8 = "version 1.1.2";
+const LAM_VERSION: []const u8 = "version 1.1.2";
 
 fn log_error(writer: *std.io.Writer, error_type: []const u8, message: []const u8) !void {
     try writer.print("\x1b[38;5;211m{s} {s}:\x1b[0m {s}\n", .{ "\u{26A0}", error_type, message });
