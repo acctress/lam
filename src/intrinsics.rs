@@ -35,3 +35,14 @@ fn compose(rt: &Runtime, mut args: Vec<Value>) -> Value {
         _ => panic!("compose expects two functions!")
     }
 }
+
+inventory::submit!(Intrinsic { name: "list", arity: 2, func: list });
+fn list(rt: &Runtime, mut args: Vec<Value>) -> Value {
+    let count = args.pop().unwrap();
+    let value = args.pop().unwrap();
+
+    match count {
+        Value::Num(n) => Value::List(vec![value; n as usize]),
+        _ => panic!("list expects count to be a number"),
+    }
+}
