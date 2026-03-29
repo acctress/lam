@@ -1,6 +1,5 @@
 use std::cmp::PartialEq;
-use std::fmt::format;
-use crate::parser::Token::RBracket;
+use crate::parser::Node::Application;
 
 #[derive(Debug, PartialEq)]
 pub enum Token {
@@ -8,6 +7,7 @@ pub enum Token {
     RParen,
     LBracket,
     RBracket,
+    Comma,
     Number(f64),
     String(String),
     Char(char),
@@ -49,7 +49,14 @@ impl Parser<'_> {
     }
 
     fn parse_expr(&mut self) -> Node {
-        self.parse_primary()
+        let mut node = self.parse_primary();
+
+        while self.do_primary() {
+            let arg = self.parse_primary();
+            node = Application { func: Box::from(node), arg: Box::new(arg) };
+        }
+
+        node
     }
 
     fn parse_primary(&mut self) -> Node {
@@ -96,7 +103,7 @@ impl Parser<'_> {
 
             match self.consume() {
                 Some(Token::RBracket) => return Node::List(list),
-                Some(Token::Symbol(s)) if s == "," => continue,
+                Some(Token::Comma) => continue,
                 _ => panic!("expected ',' or ']' in list"),
             }
         }
@@ -111,6 +118,10 @@ impl Parser<'_> {
         self.pos += 1;
         t
     }
+
+    fn do_primary(&self) -> bool {
+        matches!(self.peek(), Some(t) if !matches!(t, Token::RParen | Token::RBracket | Token::Comma))
+    }
 }
 
 fn tokenize(input: &str) -> Vec<Token> {
@@ -124,6 +135,7 @@ fn tokenize(input: &str) -> Vec<Token> {
             ')' => tokens.push(Token::RParen),
             '[' => tokens.push(Token::LBracket),
             ']' => tokens.push(Token::RBracket),
+            ',' => tokens.push(Token::Comma),
             n if n.is_ascii_digit() => {
                 let start = pos;
                 let mut is_flt = false;
@@ -177,7 +189,7 @@ fn tokenize(input: &str) -> Vec<Token> {
 }
 
 fn is_delimiter(c: char) -> bool {
-    c.is_ascii_whitespace() || matches!(c, '(' | ')' | '[' | ']' | '\'' | '"' | ',')
+    c.is_ascii_whitespace() || matches!(c, '(' | ')' | '[' | ']' | '\'' | '"')
 }
 
 #[cfg(test)]
@@ -318,6 +330,41 @@ mod tests {
                 }
             }
             _ => panic!("expected partial"),
+        }
+    }
+
+    #[test]
+    fn parse_application() {
+        let mut p = Parser::new("map (+ 1) [1, 2, 3]");
+        let node = p.parse();
+
+        match node {
+            Node::Application { func, arg } => {
+                match *arg {
+                    Node::List(items) => assert_eq!(3, items.len()),
+                    _ => panic!("expected list as outer arg"),
+                }
+                match *func {
+                    Node::Application { func: inner_func, arg: inner_arg } => {
+                        match *inner_func {
+                            Node::Atom(s) => assert_eq!("map", s),
+                            _ => panic!("expected map"),
+                        }
+                        match *inner_arg {
+                            Node::Partial { op, arg } => {
+                                assert_eq!("+", op);
+                                match *arg {
+                                    Node::Literal(n) => assert_eq!(1.0, n),
+                                    _ => panic!("expected 1"),
+                                }
+                            }
+                            _ => panic!("expected partial"),
+                        }
+                    }
+                    _ => panic!("expected inner application"),
+                }
+            }
+            _ => panic!("expected application"),
         }
     }
 }
