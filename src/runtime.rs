@@ -12,7 +12,7 @@ pub struct Intrinsic {
 
 inventory::collect!(Intrinsic);
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Env {
     bindings: HashMap<String, Value>,
     parent: Option<Box<Env>>,
@@ -22,7 +22,7 @@ pub struct Runtime {
     intrinsics: HashMap<String, (IntrinsicFn, usize)>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Value {
     Nil,
     Num(f64),
@@ -32,12 +32,12 @@ pub enum Value {
     Func(Box<LamFunc>),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum LamFunc {
     Partial { op: String, arg: Value },
     Intrinsic { name: String, args: Vec<Value>, arity: usize },
     Composition { outer: Box<LamFunc>, inner: Box<LamFunc> },
-    UDef { params: Vec<String>, body: Node, env: Env },     /* user defined */
+    UDef { name: String, params: Vec<String>, body: Node, env: Env },     /* user defined */
 }
 
 impl Runtime {
@@ -76,9 +76,19 @@ impl Runtime {
                 child.set(name, v);
                 self.eval(*body, &mut child)
             },
+            Node::If { cond, then, els } => {
+                match self.eval(*cond, env) {
+                    Value::Num(n) if n != 0f64 => self.eval(*then, env),
+                    Value::Num(_) => self.eval(*els, env),
+                    _ => panic!("if condition must evaluate to a number")
+                }
+            },
             Node::FnDef { name, params, body } => {
                 let f = Value::Func(Box::new(LamFunc::UDef {
-                    params, body: *body, env: env.clone(),
+                    name: name.clone(), /* forgot about thiz */
+                    params,
+                    body: *body,
+                    env: env.clone(),
                 }));
                 env.set(name, f);
                 Value::Nil
@@ -109,15 +119,22 @@ impl Runtime {
                     self.apply(Value::Func(Box::from(*outer)), m)
                 },
 
-                LamFunc::UDef { params, body, env: closed } => {
+                LamFunc::UDef { name, params, body, env: closed } => {
                     let mut child = closed.child();
                     child.set(params[0].clone(), arg);
+                    child.set(name.clone(), Value::Func(Box::new(LamFunc::UDef {
+                        name: name.clone(),
+                        params: params.clone(),
+                        body: body.clone(),
+                        env: closed.clone()
+                    })));
 
                     if params.len() == 1 {
                         self.eval(body, &mut child)
                     } else {
                         /* auto curry! */
                         Value::Func(Box::new(LamFunc::UDef {
+                            name,
                             params: params[1..].to_vec(),
                             body,
                             env: child
@@ -136,6 +153,11 @@ impl Runtime {
             ("-", Value::Num(a), Value::Num(b)) => Value::Num(a - b),
             ("*", Value::Num(a), Value::Num(b)) => Value::Num(a * b),
             ("/", Value::Num(a), Value::Num(b)) => Value::Num(a / b),
+            ("==", Value::Num(a), Value::Num(b)) => Value::Num(if a == b { 1f64 } else { 0f64 }),
+            (">", Value::Num(a), Value::Num(b)) => Value::Num(if a > b { 1f64 } else { 0f64 }),
+            ("<", Value::Num(a), Value::Num(b)) => Value::Num(if a < b { 1f64 } else { 0f64 }),
+            (">=", Value::Num(a), Value::Num(b)) => Value::Num(if a >= b { 1f64 } else { 0f64 }),
+            ("<=", Value::Num(a), Value::Num(b)) => Value::Num(if a <= b { 1f64 } else { 0f64 }),
             _ => panic!("type mismatch when applying operator")
         }
     }

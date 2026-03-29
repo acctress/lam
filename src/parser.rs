@@ -22,6 +22,7 @@ pub enum Node {
     Application { func: Box<Node>, arg: Box<Node> },
     List(Vec<Node>),
     Let { name: String, value: Box<Node>, body: Box<Node> },
+    If { cond: Box<Node>, then: Box<Node>, els: Box<Node> },
     FnDef { name: String, params: Vec<String>, body: Box<Node> },
 }
 
@@ -68,12 +69,14 @@ impl Parser<'_> {
                     match self.peek() {
                         Some(Token::Symbol(s)) if s == "let" => self.parse_let(),
                         Some(Token::Symbol(s)) if s == "fn" => self.parse_fn(),
+                        Some(Token::Symbol(s)) if s == "if" => self.parse_if(),
                         Some(Token::Symbol(s)) if !s.chars().next().unwrap().is_ascii_alphabetic() => self.parse_partial(),
                         _ => {
-                            let i = self.parse_expr(); /* inner expr */
+                            let i = self.parse_expr();
+                            let pos = self.pos;
                             match self.consume() {
                                 Some(Token::RParen) => {},
-                                _ => panic!("expected ')'"),
+                                t => panic!("expected ')' but got '{:?}' at pos {}", t, pos),
                             }
                             i
                         }
@@ -96,14 +99,25 @@ impl Parser<'_> {
             _ => panic!("expected operator in partial")
         };
 
-        let arg = self.parse_expr();
-
-        match self.consume() {
-            Some(Token::RParen) => {},
-            _ => panic!("expected ')' to close partial")
+        let mut args = vec![];
+        while !matches!(self.peek(), Some(Token::RParen)) {
+            args.push(self.parse_primary());
         }
 
-        Node::Partial { op, arg: Box::new(arg) }
+        self.consume();
+
+        match args.len() {
+            1 => Node::Partial { op, arg: Box::new(args.pop().unwrap())},
+            2 => {
+                let r = args.pop().unwrap();
+                let l = args.pop().unwrap();
+                Application {
+                    func: Box::new(Node::Partial { op, arg: Box::new(l) }),
+                    arg: Box::new(r)
+                }
+            }
+            _ => panic!("operation section takes one to two arguments")
+        }
     }
 
     fn parse_list(&mut self) -> Node {
@@ -190,6 +204,21 @@ impl Parser<'_> {
         }
 
         Node::FnDef { name, params, body: Box::new(body) }
+    }
+
+    fn parse_if(&mut self) -> Node {
+        self.consume();
+
+        let cond = self.parse_primary();
+        let then = self.parse_primary();
+        let els = self.parse_primary();
+
+        match self.consume() {
+            Some(Token::RParen) => {},
+            _ => panic!("expected ')' to close if"),
+        }
+
+        Node::If { cond: Box::new(cond), then: Box::new(then), els: Box::new(els) }
     }
 
     fn peek(&self) -> Option<&Token> {

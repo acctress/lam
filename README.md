@@ -1,6 +1,12 @@
 # lam
 A minimal, point-free functional Lisp. Auto-currying, operator sections, and right-to-left function composition.
 
+```
+λ (fn (fib n) (if (== n 0) 0 (if (== n 1) 1 (+ (fib (- n 1)) (fib (- n 2))))))
+λ fib 10
+→ 55
+```
+
 <img width="582" height="190" alt="image" src="https://github.com/user-attachments/assets/1471782e-f6c6-444f-8caa-f30b337b7d2b" />
 
 If you modify the Rust branch for yourself, or want to ensure everything is working correctly - run this command:
@@ -10,9 +16,9 @@ cargo test
 
 # Recent Changes
 
-* Version 0.2.0
-* Added `let` bindings.
-* Added `fn` user defined function definitions.
+* Version 0.2.1
+* Added comparison operators and `if` statements.
+* Truthy values are either `1` or `0`
 
 ```
 λ (fn (add x y) ((+ x) y))
@@ -22,7 +28,15 @@ cargo test
 λ (fn (quad a b c x) ((+ ((+ ((* a) ((* x) x))) ((* b) x)))) c))
 λ (let (f (quad 2 3 1)) (f 5))
 → 66
+
+λ (== 5) 5
+→ 1
+
+λ (if (== 1 2) 2 3)
+→ 3
 ```
+
+`(if (== 1 2) 10 20)` looks funky, but it's really simple. It essentially says: `if 1 is equal to 2, use the value 10, else use 20`
 
 # Example
 ```
