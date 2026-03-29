@@ -59,7 +59,6 @@ impl Runtime {
             Node::Literal(n) => Value::Num(n),
             Node::Atom(s) => {
                 if let Some(v) = env.get(&s) {
-                    // println!("{}", v);
                     v.clone()
                 } else if self.intrinsics.contains_key(&s) {
                     self.lookup_intrinsic(&s)

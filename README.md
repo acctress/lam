@@ -18,6 +18,10 @@ cargo test
 λ (fn (add x y) ((+ x) y))
 λ add 3 4
 → 7
+
+λ (fn (quad a b c x) ((+ ((+ ((* a) ((* x) x))) ((* b) x)))) c))
+λ (let (f (quad 2 3 1)) (f 5))
+→ 66
 ```
 
 # Example
