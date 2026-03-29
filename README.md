@@ -16,9 +16,8 @@ cargo test
 
 # Recent Changes
 
-* Version 0.2.2
-* Added `zip` intrinsic.
-* Added range and step notations in lists.
+* Version 0.2.21
+* Added `fold` intrinsic.
 
 ```
 λ (fn (add x y) ((+ x) y))
@@ -47,11 +46,17 @@ cargo test
 λ [(+ 1), (* 2), (- 3)]
 → [<fn>, <fn>, <fn>]
 
+λ (fn (mul a b) (* a b))
+λ fold 1 mul [1..6]
+→ 120
+
 λ (if (== 1 2) 2 3)
 → 3
 ```
 
 `(if (== 1 2) 10 20)` looks funky, but it's really simple. It essentially says: `if 1 is equal to 2, use the value 10, else use 20`
+
+As of version `0.2.21`, the `fold` function is unable to take bare operators as functions e.g. `fold 0 (+) list`, a wrapper will have to be defined like `mul`. This is because in version `0.2.21`, any zero argument sections cause an error - a fix will most likely be added next version.
 
 # Example
 ```

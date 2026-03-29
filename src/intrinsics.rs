@@ -64,3 +64,17 @@ fn zip(rt: &Runtime, mut args: Vec<Value>) -> Value {
 
     Value::List(a_list.into_iter().zip(b_list).map(|(a, b)| Value::List(vec![a, b])).collect())
 }
+
+inventory::submit!(Intrinsic { name: "fold", arity: 3, func: fold });
+fn fold(rt: &Runtime, mut args: Vec<Value>) -> Value {
+    let list = args.pop().unwrap();
+    let func = args.pop().unwrap();
+    let init = args.pop().unwrap();
+
+    let list_value = match list {
+        Value::List(items) => items,
+        _ => panic!("fold expects a list")
+    };
+
+    list_value.into_iter().fold(init, |acc, x| rt.apply(rt.apply(func.clone(), acc), x))
+}
