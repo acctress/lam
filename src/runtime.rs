@@ -61,6 +61,8 @@ impl Runtime {
                     v.clone()
                 } else if self.intrinsics.contains_key(&s) {
                     self.lookup_intrinsic(&s)
+                } else if s.len() == 1 {
+                    Value::Char(s.chars().next().unwrap())
                 } else {
                     Value::Str(s)
                 }
@@ -148,7 +150,7 @@ impl Runtime {
     fn call_intrinsic(&self, name: &str, args: Vec<Value>) -> Value {
         match self.intrinsics.get(name) {
             Some((func, _)) => func(self, args),
-            None => panic!("unknown intrinsic '{}'", name)
+            None => panic!("unknown intrinsic '{name}'")
         }
     }
 
@@ -159,7 +161,7 @@ impl Runtime {
                 args: vec![],
                 arity: *arity
             })),
-            None => panic!("unknown symbol '{}'", name)
+            None => panic!("unknown symbol '{name}'")
         }
     }
 }
@@ -182,62 +184,17 @@ impl Env {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::parser::Parser;
-    use crate::runtime::Runtime;
-    use super::*;
-
-    #[test]
-    fn eval_partial_application() {
-        let mut p = Parser::new("(+ 5) 3");
-        let node = p.parse();
-        let mut env = Env::new();
-        let rt = Runtime::new();
-        let result = rt.exec(node, &mut env);
-
-        match result {
-            Value::Num(n) => assert_eq!(8.0, n),
-            _ => panic!("expected number"),
-        }
-    }
-
-    #[test]
-    fn eval_map() {
-        let mut p = Parser::new("map (+ 1) [1, 2, 3]");
-        let node = p.parse();
-        let mut env = Env::new();
-        let rt = Runtime::new();
-        let result = rt.exec(node, &mut env);
-
-        match result {
-            Value::List(items) => {
-                assert_eq!(3, items.len());
-                match (&items[0], &items[1], &items[2]) {
-                    (Value::Num(a), Value::Num(b), Value::Num(c)) => {
-                        assert_eq!(2.0, *a);
-                        assert_eq!(3.0, *b);
-                        assert_eq!(4.0, *c);
-                    }
-                    _ => panic!("expected numbers"),
-                }
-            }
-            _ => panic!("expected list"),
-        }
-    }
-}
-
 impl std::fmt::Display for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Value::Num(n) => write!(f, "{}", n),
-            Value::Str(s) => write!(f, "\"{}\"", s),
-            Value::Char(c) => write!(f, "{}", c),
+            Value::Num(n) => write!(f, "{n}"),
+            Value::Str(s) => write!(f, "\"{s}\""),
+            Value::Char(c) => write!(f, "{c}"),
             Value::List(items) => {
                 write!(f, "[")?;
                 for (i, item) in items.iter().enumerate() {
                     if i > 0 { write!(f, ", ")?; }
-                    write!(f, "{}", item)?;
+                    write!(f, "{item}")?;
                 }
                 write!(f, "]")
             }

@@ -1,7 +1,7 @@
 use crate::runtime::{Runtime, Intrinsic, Value, LamFunc};
 
 inventory::submit!(Intrinsic { name: "+", arity: 2, func: add });
-fn add(rt: &Runtime, mut args: Vec<Value>) -> Value {
+fn add(_rt: &Runtime, mut args: Vec<Value>) -> Value {
     let b = args.pop().unwrap();
     let a = args.pop().unwrap();
     match (a, b) {
@@ -11,7 +11,7 @@ fn add(rt: &Runtime, mut args: Vec<Value>) -> Value {
 }
 
 inventory::submit!(Intrinsic { name: "-", arity: 2, func: sub });
-fn sub(rt: &Runtime, mut args: Vec<Value>) -> Value {
+fn sub(_rt: &Runtime, mut args: Vec<Value>) -> Value {
     let b = args.pop().unwrap();
     let a = args.pop().unwrap();
     match (a, b) {
@@ -21,7 +21,7 @@ fn sub(rt: &Runtime, mut args: Vec<Value>) -> Value {
 }
 
 inventory::submit!(Intrinsic { name: "*", arity: 2, func: mul });
-fn mul(rt: &Runtime, mut args: Vec<Value>) -> Value {
+fn mul(_rt: &Runtime, mut args: Vec<Value>) -> Value {
     let b = args.pop().unwrap();
     let a = args.pop().unwrap();
     match (a, b) {
@@ -31,7 +31,7 @@ fn mul(rt: &Runtime, mut args: Vec<Value>) -> Value {
 }
 
 inventory::submit!(Intrinsic { name: "/", arity: 2, func: div });
-fn div(rt: &Runtime, mut args: Vec<Value>) -> Value {
+fn div(_rt: &Runtime, mut args: Vec<Value>) -> Value {
     let b = args.pop().unwrap();
     let a = args.pop().unwrap();
     match (a, b) {
@@ -41,7 +41,7 @@ fn div(rt: &Runtime, mut args: Vec<Value>) -> Value {
 }
 
 inventory::submit!(Intrinsic { name: "==", arity: 2, func: eq });
-fn eq(rt: &Runtime, mut args: Vec<Value>) -> Value {
+fn eq(_rt: &Runtime, mut args: Vec<Value>) -> Value {
     let b = args.pop().unwrap();
     let a = args.pop().unwrap();
     match (a, b) {
@@ -51,7 +51,7 @@ fn eq(rt: &Runtime, mut args: Vec<Value>) -> Value {
 }
 
 inventory::submit!(Intrinsic { name: ">", arity: 2, func: gt });
-fn gt(rt: &Runtime, mut args: Vec<Value>) -> Value {
+fn gt(_rt: &Runtime, mut args: Vec<Value>) -> Value {
     let b = args.pop().unwrap();
     let a = args.pop().unwrap();
     match (a, b) {
@@ -61,7 +61,7 @@ fn gt(rt: &Runtime, mut args: Vec<Value>) -> Value {
 }
 
 inventory::submit!(Intrinsic { name: "<", arity: 2, func: lt });
-fn lt(rt: &Runtime, mut args: Vec<Value>) -> Value {
+fn lt(_rt: &Runtime, mut args: Vec<Value>) -> Value {
     let b = args.pop().unwrap();
     let a = args.pop().unwrap();
     match (a, b) {
@@ -71,7 +71,7 @@ fn lt(rt: &Runtime, mut args: Vec<Value>) -> Value {
 }
 
 inventory::submit!(Intrinsic { name: ">=", arity: 2, func: gte });
-fn gte(rt: &Runtime, mut args: Vec<Value>) -> Value {
+fn gte(_rt: &Runtime, mut args: Vec<Value>) -> Value {
     let b = args.pop().unwrap();
     let a = args.pop().unwrap();
     match (a, b) {
@@ -81,7 +81,7 @@ fn gte(rt: &Runtime, mut args: Vec<Value>) -> Value {
 }
 
 inventory::submit!(Intrinsic { name: "<=", arity: 2, func: lte });
-fn lte(rt: &Runtime, mut args: Vec<Value>) -> Value {
+fn lte(_rt: &Runtime, mut args: Vec<Value>) -> Value {
     let b = args.pop().unwrap();
     let a = args.pop().unwrap();
     match (a, b) {
@@ -91,7 +91,7 @@ fn lte(rt: &Runtime, mut args: Vec<Value>) -> Value {
 }
 
 inventory::submit!(Intrinsic { name: "!=", arity: 2, func: ne });
-fn ne(rt: &Runtime, mut args: Vec<Value>) -> Value {
+fn ne(_rt: &Runtime, mut args: Vec<Value>) -> Value {
     let b = args.pop().unwrap();
     let a = args.pop().unwrap();
     match (a, b) {
@@ -114,15 +114,15 @@ fn map(rt: &Runtime, mut args: Vec<Value>) -> Value {
 }
 
 inventory::submit!(Intrinsic { name: "putln", arity: 1, func: putln });
-fn putln(rt: &Runtime, mut args: Vec<Value>) -> Value {
+fn putln(_rt: &Runtime, mut args: Vec<Value>) -> Value {
     let str = args.pop().unwrap();
-    println!("{}", str);
+    println!("{str}");
 
     Value::Nil
 }
 
 inventory::submit!(Intrinsic { name: "compose", arity: 2, func: compose });
-fn compose(rt: &Runtime, mut args: Vec<Value>) -> Value {
+fn compose(_rt: &Runtime, mut args: Vec<Value>) -> Value {
     let inner = args.pop().unwrap();
     let outer = args.pop().unwrap();
 
@@ -137,7 +137,7 @@ fn compose(rt: &Runtime, mut args: Vec<Value>) -> Value {
 }
 
 inventory::submit!(Intrinsic { name: "list", arity: 2, func: list });
-fn list(rt: &Runtime, mut args: Vec<Value>) -> Value {
+fn list(_rt: &Runtime, mut args: Vec<Value>) -> Value {
     let count = args.pop().unwrap();
     let value = args.pop().unwrap();
 
@@ -148,19 +148,12 @@ fn list(rt: &Runtime, mut args: Vec<Value>) -> Value {
 }
 
 inventory::submit!(Intrinsic { name: "zip", arity: 2, func: zip });
-fn zip(rt: &Runtime, mut args: Vec<Value>) -> Value {
+fn zip(_rt: &Runtime, mut args: Vec<Value>) -> Value {
     let b = args.pop().unwrap();
     let a = args.pop().unwrap();
 
-    let a_list = match a {
-        Value::List(items) => items,
-        _ => panic!("zip expects two lists")
-    };
-
-    let b_list = match b {
-        Value::List(items) => items,
-        _ => panic!("zip expects two lists")
-    };
+    let Value::List(a_list) = a else { panic!("zip expects two lists") };
+    let Value::List(b_list) = b else { panic!("zip expects two lists") };
 
     Value::List(a_list.into_iter().zip(b_list).map(|(a, b)| Value::List(vec![a, b])).collect())
 }
@@ -171,10 +164,7 @@ fn fold(rt: &Runtime, mut args: Vec<Value>) -> Value {
     let func = args.pop().unwrap();
     let init = args.pop().unwrap();
 
-    let list_value = match list {
-        Value::List(items) => items,
-        _ => panic!("fold expects a list")
-    };
+    let Value::List(list_value) = list else { panic!("fold expects a list") };
 
     list_value.into_iter().fold(init, |acc, x| rt.apply(rt.apply(func.clone(), acc), x))
 }

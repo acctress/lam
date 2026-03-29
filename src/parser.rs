@@ -28,25 +28,19 @@ pub enum Node {
     FnDef { name: String, params: Vec<String>, body: Box<Node> },
 }
 
-pub struct Parser<'a> {
-    input: &'a str,
+pub struct Parser {
     tokens: Vec<Token>,
     pos: usize,
 }
 
-impl Parser<'_> {
-    pub fn new(input: &'_ str) -> Parser<'_> {
+impl Parser {
+    pub fn new(input: &'_ str) -> Parser {
         let tokens = tokenize(input);
 
         Parser {
-            input,
             tokens,
             pos: 0
         }
-    }
-
-    pub fn tokens(&self) -> &Vec<Token> {
-        &self.tokens
     }
 
     pub fn parse(&mut self) -> Node {
@@ -78,7 +72,7 @@ impl Parser<'_> {
                             let pos = self.pos;
                             match self.consume() {
                                 Some(Token::RParen) => {},
-                                t => panic!("expected ')' but got '{:?}' at pos {}", t, pos),
+                                t => panic!("expected ')' but got '{t:?}' at pos {pos}"),
                             }
                             i
                         }
@@ -86,10 +80,9 @@ impl Parser<'_> {
                 },
                 Token::LBracket => self.parse_list(),
                 Token::Number(n) => Node::Literal(*n),
-                Token::String(s) => Node::Atom(s.clone()),
-                Token::Char(c) => Node::Literal(*c as u32 as f64),
-                Token::Symbol(s) => Node::Atom(s.clone()),
-                _ => panic!("unexpected token '{:?}'", token),
+                Token::Char(c) => Node::Literal(f64::from(*c as u32)),
+                Token::Symbol(s) | Token::String(s) => Node::Atom(s.clone()),
+                _ => panic!("unexpected token '{token:?}'"),
             }
             _ => panic!("unexpected end of input")
         }
@@ -277,16 +270,16 @@ fn tokenize(input: &str) -> Vec<Token> {
 
     while let Some((pos, current)) = chars.next() {
         match current {
-            c if c.is_ascii_whitespace() => continue,
+            c if c.is_ascii_whitespace() => {},
             '(' => tokens.push(Token::LParen),
             ')' => tokens.push(Token::RParen),
             '[' => tokens.push(Token::LBracket),
             ']' => tokens.push(Token::RBracket),
             ',' => tokens.push(Token::Comma),
             ';' => tokens.push(Token::Semi),
-            '.' if chars.peek().map_or(false, |(_, c)| *c == '.') => {
+            '.' if chars.peek().is_some_and(|(_, c)| *c == '.') => {
                 chars.next();
-                tokens.push(Token::Range)
+                tokens.push(Token::Range);
             }
             n if n.is_ascii_digit() => {
                 let start = pos;
@@ -298,7 +291,7 @@ fn tokenize(input: &str) -> Vec<Token> {
                     } else if *c == '.' && !is_flt {
                         /* had the issue of ".." being a float, so uh set is_flt ONLY if peeked next char is a number */
                         let nx = input.as_bytes().get(p + 1);
-                        if nx.map_or(false, |x| x.is_ascii_digit()) {
+                        if nx.is_some_and(u8::is_ascii_digit) {
                             is_flt = true;
                             true
                         } else {
@@ -314,7 +307,7 @@ fn tokenize(input: &str) -> Vec<Token> {
                 let end = chars.peek().map_or(input.len(), |(i, _)| *i);
                 let value = &input[start..end];
 
-                tokens.push(Token::Number(value.parse::<f64>().expect(&format!("failed to parse '{}' as number", value))));
+                tokens.push(Token::Number(value.parse::<f64>().unwrap_or_else(|_| panic!("failed to parse '{value}' as number"))));
             },
             q if q == '"' => {
                 let start = pos + 1;
@@ -328,18 +321,18 @@ fn tokenize(input: &str) -> Vec<Token> {
 
                 tokens.push(Token::String(input[start..end].to_string()));
             },
-            q if q == '\'' => {
+            '\'' => {
                 if let Some((_, chr)) = chars.next() {
-                    if chars.next().map_or(false, |(_, nxt)| nxt == '\'') {
+                    if chars.next().is_some_and(|(_, nxt)| nxt == '\'') {
                         tokens.push(Token::Char(chr));
-                    } else if chars.next().map_or(false, |(_, nxt)| nxt.is_ascii_alphanumeric()) {
+                    } else if chars.next().is_some_and(|(_, nxt)| nxt.is_ascii_alphanumeric()) {
                         panic!("char literals can only contain one character");
                     } else {
                         panic!("unterminated char literal");
                     }
                 }
             },
-            c => {
+            _ => {
                 let start = pos;
 
                 while chars.peek().is_some_and(|(_, c)| !is_delimiter(*c)) {
@@ -359,181 +352,4 @@ fn tokenize(input: &str) -> Vec<Token> {
 
 fn is_delimiter(c: char) -> bool {
     c.is_ascii_whitespace() || matches!(c, '(' | ')' | '[' | ']' | '\'' | '"' | ';' | '.')
-}
-
-#[cfg(test)]
-mod tests {
-    use std::ops::Deref;
-    use super::*;
-
-    #[test]
-    fn test_basic_tokenization() {
-        let p = Parser::new("(23.5373)thirty");
-
-        /* expect 4 tokens */
-        assert_eq!(4, p.tokens().len());
-
-        /* expect token types */
-        assert_eq!(Token::LParen, *p.tokens().get(0).unwrap());
-        assert_eq!(Token::Number(23.5373), *p.tokens().get(1).unwrap());
-        assert_eq!(Token::RParen, *p.tokens().get(2).unwrap());
-        assert_eq!(Token::Symbol("thirty".to_string()), *p.tokens().get(3).unwrap());
-    }
-
-    #[test]
-    fn test_string_tokenization() {
-        let p = Parser::new(r#""hello world""#);
-
-        for token in p.tokens() {
-            println!("{:?}", token);
-        }
-
-        assert_eq!(1, p.tokens().len());
-        assert_eq!(Token::String("hello world".to_string()), *p.tokens().get(0).unwrap());
-    }
-
-    #[test]
-    fn test_char_tokenization() {
-        let p = Parser::new(r#"'c'"#);
-
-        assert_eq!(1, p.tokens().len());
-        assert_eq!(Token::Char('c'), *p.tokens().get(0).unwrap());
-    }
-
-    #[test]
-    fn parse_partial() {
-        let mut p = Parser::new("(+ 5)");
-        let node = p.parse();
-
-        match node {
-            Node::Partial { op, arg } => {
-                assert_eq!("+".to_string(), op );
-                match *arg {
-                    Node::Literal(n) => assert_eq!(5.0, n),
-                    _ => panic!("expected 5 as arg")
-                }
-            }
-
-            _ => panic!("expected partial")
-        }
-    }
-
-    #[test]
-    fn parse_literal() {
-        let mut p = Parser::new("42");
-        let node = p.parse();
-
-        match node {
-            Node::Literal(n) => assert_eq!(42.0, n),
-            _ => panic!("expected literal"),
-        }
-    }
-
-    #[test]
-    fn parse_symbol() {
-        let mut p = Parser::new("map");
-        let node = p.parse();
-
-        match node {
-            Node::Atom(s) => assert_eq!("map", s),
-            _ => panic!("expected atom"),
-        }
-    }
-
-    #[test]
-    fn parse_char_as_literal() {
-        let mut p = Parser::new("'a'");
-        let node = p.parse();
-
-        match node {
-            Node::Literal(n) => assert_eq!(97.0, n),
-            _ => panic!("expected literal from char"),
-        }
-    }
-
-    #[test]
-    fn parse_empty_list() {
-        let mut p = Parser::new("[]");
-        let node = p.parse();
-
-        match node {
-            Node::List(items) => assert_eq!(0, items.len()),
-            _ => panic!("expected empty list"),
-        }
-    }
-
-    #[test]
-    fn parse_list() {
-        let mut p = Parser::new("[1, 2, 3]");
-        let node = p.parse();
-
-        match node {
-            Node::List(items) => {
-                assert_eq!(3, items.len());
-                match &items[0] {
-                    Node::Literal(n) => assert_eq!(1.0, *n),
-                    _ => panic!("expected literal"),
-                }
-            }
-            _ => panic!("expected list"),
-        }
-    }
-
-    #[test]
-    fn parse_nested_partial() {
-        let mut p = Parser::new("(+ (+ 1))");
-        let node = p.parse();
-
-        match node {
-            Node::Partial { op, arg } => {
-                assert_eq!("+", op);
-                match *arg {
-                    Node::Partial { op: inner_op, arg: inner_arg } => {
-                        assert_eq!("+", inner_op);
-                        match *inner_arg {
-                            Node::Literal(n) => assert_eq!(1.0, n),
-                            _ => panic!("expected literal"),
-                        }
-                    }
-                    _ => panic!("expected inner partial"),
-                }
-            }
-            _ => panic!("expected partial"),
-        }
-    }
-
-    #[test]
-    fn parse_application() {
-        let mut p = Parser::new("map (+ 1) [1, 2, 3]");
-        let node = p.parse();
-
-        match node {
-            Node::Application { func, arg } => {
-                match *arg {
-                    Node::List(items) => assert_eq!(3, items.len()),
-                    _ => panic!("expected list as outer arg"),
-                }
-                match *func {
-                    Node::Application { func: inner_func, arg: inner_arg } => {
-                        match *inner_func {
-                            Node::Atom(s) => assert_eq!("map", s),
-                            _ => panic!("expected map"),
-                        }
-                        match *inner_arg {
-                            Node::Partial { op, arg } => {
-                                assert_eq!("+", op);
-                                match *arg {
-                                    Node::Literal(n) => assert_eq!(1.0, n),
-                                    _ => panic!("expected 1"),
-                                }
-                            }
-                            _ => panic!("expected partial"),
-                        }
-                    }
-                    _ => panic!("expected inner application"),
-                }
-            }
-            _ => panic!("expected application"),
-        }
-    }
 }

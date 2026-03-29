@@ -19,42 +19,57 @@ fn main() {
     let mut env = Env::new();
     let rt = Runtime::new();
 
-    loop {
-        print!("{MAGENTA}λ{RESET} ");
-        io::stdout().flush().unwrap();
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() > 1 {
+        let src = std::fs::read_to_string(&args[1]).expect("failed to read file");
+        let mut env = Env::new();
 
-        let mut l = String::new();
-        if stdin().lock().read_line(&mut l).unwrap() == 0 {
-            break;
-        }
+        for line in src.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') { continue; }
 
-        let input = l.trim();
-        if input.is_empty() { continue; }
-
-
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let mut parser = Parser::new(input);
+            let mut parser = Parser::new(line);
             let node = parser.parse();
-            rt.exec(node, &mut env)
-        }));
+            rt.exec(node, &mut env);
+        }
+    } else {
+        loop {
+            print!("{MAGENTA}λ{RESET} ");
+            io::stdout().flush().unwrap();
 
-        match result {
-            Ok(value) => match &value {
-                runtime::Value::Num(_) | runtime::Value::Char(_) => println!("{CYAN}→ {value}{RESET}"),
-                runtime::Value::Str(_) => println!("{GREEN}→ {value}{RESET}"),
-                runtime::Value::List(_) => println!("{YELLOW}→ {value}{RESET}"),
-                runtime::Value::Func(_) | runtime::Value::Nil => {},
-            },
-            Err(e) => {
-                let msg = if let Some(s) = e.downcast_ref::<String>() {
-                    s.as_str()
-                } else if let Some(s) = e.downcast_ref::<&str>() {
-                    s
-                } else {
-                    "unknown error"
-                };
+            let mut l = String::new();
+            if stdin().lock().read_line(&mut l).unwrap() == 0 {
+                break;
+            }
 
-                println!("{RED}error: {msg}\x1b[0m");
+            let input = l.trim();
+            if input.is_empty() { continue; }
+
+
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let mut parser = Parser::new(input);
+                let node = parser.parse();
+                rt.exec(node, &mut env)
+            }));
+
+            match result {
+                Ok(value) => match &value {
+                    runtime::Value::Num(_) | runtime::Value::Char(_) => println!("{CYAN}→ {value}{RESET}"),
+                    runtime::Value::Str(_) => println!("{GREEN}→ {value}{RESET}"),
+                    runtime::Value::List(_) => println!("{YELLOW}→ {value}{RESET}"),
+                    runtime::Value::Func(_) | runtime::Value::Nil => {},
+                },
+                Err(e) => {
+                    let msg = if let Some(s) = e.downcast_ref::<String>() {
+                        s.as_str()
+                    } else if let Some(s) = e.downcast_ref::<&str>() {
+                        s
+                    } else {
+                        "unknown error"
+                    };
+
+                    println!("{RED}error: {msg}\x1b[0m");
+                }
             }
         }
     }
