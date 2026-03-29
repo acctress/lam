@@ -7,6 +7,16 @@ A minimal, point-free functional Lisp. Auto-currying, operator sections, and rig
 → 55
 ```
 
+```
+λ map (\x -> (if (> x 5) "big" "small")) [1..11]
+→ ["small", "small", "small", "small", "small", "big", "big", "big", "big", "big"]
+```
+
+```
+λ map (\f -> (f 10)) [(+ 1), (* 2), (- 3)]
+→ [11, 20, -7]
+```
+
 # Recent Changes
 
 * Version 0.2.24
