@@ -178,6 +178,14 @@ fn concat(_rt: &Runtime, mut args: Vec<Value>) -> Value {
     Value::Str(format!("{b}{a}"))
 }
 
+inventory::submit!(Intrinsic { name: "append", arity: 2, func: append });
+fn append(_rt: &Runtime, mut args: Vec<Value>) -> Value {
+    let Value::List(b) = args.pop().unwrap() else { panic!("append expects two lists") };
+    let Value::List(mut a) = args.pop().unwrap() else { panic!("append expects two lists") };
+    a.extend(b);
+    Value::List(a)
+}
+
 inventory::submit!(Intrinsic { name: "len", arity: 1, func: len });
 fn len(_rt: &Runtime, mut args: Vec<Value>) -> Value {
     match args.pop().unwrap() {

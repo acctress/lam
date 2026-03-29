@@ -19,11 +19,13 @@ A minimal, point-free functional Lisp. Auto-currying, operator sections, and rig
 
 # Recent Changes
 
-* Version 0.2.25
-* Added string intrinsics e.g. `concat`, `str`, `chars`
-* Added list operation intrinsics e.g. `head`, `tail`, `reverse`, `filter`
+* Version 0.2.26
+* Added `append` intrinsic.
 
 ```
+λ append [1..5] [6..11]
+→ [1, 2, 3, 4, 6, 7, 8, 9, 10]
+
 # we use a lambda to be explicit with the order of the comparison, x IS GREATER THAN 5
 λ filter (\x -> (> x 5)) [1..11]
 → [6, 7, 8, 9, 10]
