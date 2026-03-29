@@ -4,6 +4,7 @@ pub enum Token {
     RParen,
     Number(f64),
     String(String),
+    Char(char),
     Symbol(String), /* identifier but with a fancy name */
 }
 
@@ -71,6 +72,27 @@ fn tokenize(input: &str) -> Vec<Token> {
                 let value = &input[start..end];
 
                 tokens.push(Token::Symbol(value.to_string()));
+            },
+            q if q == '"' => {
+                let start = pos + 1;
+
+                while chars.peek().is_some_and(|(_, c)| *c != q) {
+                    chars.next();
+                }
+
+                let end = chars.peek().map_or(input.len(), |(i, _)| *i);
+                chars.next();
+
+                tokens.push(Token::String(input[start..end].to_string()));
+            },
+            q if q == '\'' => {
+                if let Some((_, chr)) = chars.next() {
+                    if chars.next().map_or(false, |(_, nxt)| nxt == '\'') {
+                        tokens.push(Token::Char(chr));
+                    } else {
+                        panic!("unterminated char literal");
+                    }
+                }
             }
             _ => continue,
         }
@@ -95,5 +117,25 @@ mod tests {
         assert_eq!(Token::Number(23.5373), *p.tokens().get(1).unwrap());
         assert_eq!(Token::RParen, *p.tokens().get(2).unwrap());
         assert_eq!(Token::Symbol("thirty".to_string()), *p.tokens().get(3).unwrap());
+    }
+
+    #[test]
+    fn test_string_tokenization() {
+        let p = Parser::new(r#""hello world""#);
+
+        for token in p.tokens() {
+            println!("{:?}", token);
+        }
+
+        assert_eq!(1, p.tokens().len());
+        assert_eq!(Token::String("hello world".to_string()), *p.tokens().get(0).unwrap());
+    }
+
+    #[test]
+    fn test_char_tokenization() {
+        let p = Parser::new(r#"'c'"#);
+
+        assert_eq!(1, p.tokens().len());
+        assert_eq!(Token::Char('c'), *p.tokens().get(0).unwrap());
     }
 }
