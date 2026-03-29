@@ -7,13 +7,6 @@ A minimal, point-free functional Lisp. Auto-currying, operator sections, and rig
 → 55
 ```
 
-<img width="582" height="190" alt="image" src="https://github.com/user-attachments/assets/1471782e-f6c6-444f-8caa-f30b337b7d2b" />
-
-If you modify the Rust branch for yourself, or want to ensure everything is working correctly - run this command:
-```
-cargo test
-```
-
 # Recent Changes
 
 * Version 0.2.24
