@@ -34,7 +34,6 @@ pub enum Value {
 
 #[derive(Clone, Debug)]
 pub enum LamFunc {
-    Partial { op: String, arg: Value },
     Intrinsic { name: String, args: Vec<Value>, arity: usize },
     Composition { outer: Box<LamFunc>, inner: Box<LamFunc> },
     UDef { name: String, params: Vec<String>, body: Node, env: Env },     /* user defined */
@@ -67,7 +66,10 @@ impl Runtime {
                 }
             },
             Node::List(items) => Value::List(items.into_iter().map(|n| self.eval(n, env)).collect()),
-            Node::Partial { op, arg } => Value::Func(Box::new(LamFunc::Partial { op, arg: self.eval(*arg, env) })),
+            Node::Partial { op, arg } => {
+                let fun = self.eval(Node::Atom(op), env);
+                self.apply(fun, self.eval(*arg, env))
+            },
             Node::Application { func, arg } => self.apply(self.eval(*func, env), self.eval(*arg, env)),
             Node::Let { name, value, body } => {
                 let v = self.eval(*value, env);
@@ -99,10 +101,6 @@ impl Runtime {
     pub(crate) fn apply(&self, func: Value, arg: Value) -> Value {
         match func {
             Value::Func(f) => match *f {
-                LamFunc::Partial { op, arg: left } => {
-                    self.apply_op(&op, left, arg)
-                }
-
                 LamFunc::Intrinsic { name, mut args, arity } => {
                     args.push(arg);
 
@@ -144,21 +142,6 @@ impl Runtime {
             }
 
             _ => panic!("tried to apply a non function!")
-        }
-    }
-
-    fn apply_op(&self, op: &str, left: Value, right: Value) -> Value {
-        match (op, left, right) {
-            ("+", Value::Num(a), Value::Num(b)) => Value::Num(a + b),
-            ("-", Value::Num(a), Value::Num(b)) => Value::Num(a - b),
-            ("*", Value::Num(a), Value::Num(b)) => Value::Num(a * b),
-            ("/", Value::Num(a), Value::Num(b)) => Value::Num(a / b),
-            ("==", Value::Num(a), Value::Num(b)) => Value::Num(if a == b { 1f64 } else { 0f64 }),
-            (">", Value::Num(a), Value::Num(b)) => Value::Num(if a > b { 1f64 } else { 0f64 }),
-            ("<", Value::Num(a), Value::Num(b)) => Value::Num(if a < b { 1f64 } else { 0f64 }),
-            (">=", Value::Num(a), Value::Num(b)) => Value::Num(if a >= b { 1f64 } else { 0f64 }),
-            ("<=", Value::Num(a), Value::Num(b)) => Value::Num(if a <= b { 1f64 } else { 0f64 }),
-            _ => panic!("type mismatch when applying operator")
         }
     }
 

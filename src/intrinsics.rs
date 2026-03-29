@@ -1,5 +1,105 @@
 use crate::runtime::{Runtime, Intrinsic, Value, LamFunc};
 
+inventory::submit!(Intrinsic { name: "+", arity: 2, func: add });
+fn add(rt: &Runtime, mut args: Vec<Value>) -> Value {
+    let b = args.pop().unwrap();
+    let a = args.pop().unwrap();
+    match (a, b) {
+        (Value::Num(a), Value::Num(b)) => Value::Num(a + b),
+        _ => panic!("+ expects two numbers")
+    }
+}
+
+inventory::submit!(Intrinsic { name: "-", arity: 2, func: sub });
+fn sub(rt: &Runtime, mut args: Vec<Value>) -> Value {
+    let b = args.pop().unwrap();
+    let a = args.pop().unwrap();
+    match (a, b) {
+        (Value::Num(a), Value::Num(b)) => Value::Num(a - b),
+        _ => panic!("- expects two numbers")
+    }
+}
+
+inventory::submit!(Intrinsic { name: "*", arity: 2, func: mul });
+fn mul(rt: &Runtime, mut args: Vec<Value>) -> Value {
+    let b = args.pop().unwrap();
+    let a = args.pop().unwrap();
+    match (a, b) {
+        (Value::Num(a), Value::Num(b)) => Value::Num(a * b),
+        _ => panic!("* expects two numbers")
+    }
+}
+
+inventory::submit!(Intrinsic { name: "/", arity: 2, func: div });
+fn div(rt: &Runtime, mut args: Vec<Value>) -> Value {
+    let b = args.pop().unwrap();
+    let a = args.pop().unwrap();
+    match (a, b) {
+        (Value::Num(a), Value::Num(b)) => Value::Num(a / b),
+        _ => panic!("/ expects two numbers")
+    }
+}
+
+inventory::submit!(Intrinsic { name: "==", arity: 2, func: eq });
+fn eq(rt: &Runtime, mut args: Vec<Value>) -> Value {
+    let b = args.pop().unwrap();
+    let a = args.pop().unwrap();
+    match (a, b) {
+        (Value::Num(a), Value::Num(b)) => Value::Num(f64::from(a == b)),
+        _ => panic!("== expects two numbers")
+    }
+}
+
+inventory::submit!(Intrinsic { name: ">", arity: 2, func: gt });
+fn gt(rt: &Runtime, mut args: Vec<Value>) -> Value {
+    let b = args.pop().unwrap();
+    let a = args.pop().unwrap();
+    match (a, b) {
+        (Value::Num(a), Value::Num(b)) => Value::Num(f64::from(a > b)),
+        _ => panic!("> expects two numbers")
+    }
+}
+
+inventory::submit!(Intrinsic { name: "<", arity: 2, func: lt });
+fn lt(rt: &Runtime, mut args: Vec<Value>) -> Value {
+    let b = args.pop().unwrap();
+    let a = args.pop().unwrap();
+    match (a, b) {
+        (Value::Num(a), Value::Num(b)) => Value::Num(f64::from(a < b)),
+        _ => panic!("< expects two numbers")
+    }
+}
+
+inventory::submit!(Intrinsic { name: ">=", arity: 2, func: gte });
+fn gte(rt: &Runtime, mut args: Vec<Value>) -> Value {
+    let b = args.pop().unwrap();
+    let a = args.pop().unwrap();
+    match (a, b) {
+        (Value::Num(a), Value::Num(b)) => Value::Num(f64::from(a >= b)),
+        _ => panic!(">= expects two numbers")
+    }
+}
+
+inventory::submit!(Intrinsic { name: "<=", arity: 2, func: lte });
+fn lte(rt: &Runtime, mut args: Vec<Value>) -> Value {
+    let b = args.pop().unwrap();
+    let a = args.pop().unwrap();
+    match (a, b) {
+        (Value::Num(a), Value::Num(b)) => Value::Num(f64::from(a <= b)),
+        _ => panic!("<= expects two numbers")
+    }
+}
+
+inventory::submit!(Intrinsic { name: "!=", arity: 2, func: ne });
+fn ne(rt: &Runtime, mut args: Vec<Value>) -> Value {
+    let b = args.pop().unwrap();
+    let a = args.pop().unwrap();
+    match (a, b) {
+        (Value::Num(a), Value::Num(b)) => Value::Num(f64::from(a != b)),
+        _ => panic!("!= expects two numbers")
+    }
+}
+
 inventory::submit!(Intrinsic { name: "map", arity: 2, func: map });
 fn map(rt: &Runtime, mut args: Vec<Value>) -> Value {
     let list = args.pop().unwrap();

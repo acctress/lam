@@ -16,8 +16,11 @@ cargo test
 
 # Recent Changes
 
-* Version 0.2.21
-* Added `fold` intrinsic.
+* Version 0.2.22
+* Removed `LamFunc::Partial` and `apply_op`.
+* Every operator is an intrinsic with auto currying
+* Operators can be used as bare functions e.g. (+), (==)
+* Added `fold`, `zip`
 
 ```
 λ (fn (add x y) ((+ x) y))
@@ -52,11 +55,49 @@ cargo test
 
 λ (if (== 1 2) 2 3)
 → 3
+
+λ (+ 1 2)
+→ 3
+
+λ (* 3 4)
+→ 12
+
+λ (== 5 5)
+→ 1
+
+λ (== 5 6)
+→ 0
+
+λ (!= 5 6)
+→ 1
+
+λ (+ 1) 5
+→ 6
+
+λ map (*) [1, 2, 3]
+→ [<fn>, <fn>, <fn>]
+
+λ fold 0 (+) [1..11]
+→ 55
+
+λ fold 1 (*) [1..6]
+→ 120
+
+λ (fn (fact n) (if (== n 0) 1 (* n (fact (- n 1)))))
+λ fact 10
+→ 3628800
+
+λ compose (+ 10) (* 2) 5
+→ 20
+
+λ map (compose (+ 10) (* 2)) [1, 2, 3]
+→ [12, 14, 16]
 ```
 
 `(if (== 1 2) 10 20)` looks funky, but it's really simple. It essentially says: `if 1 is equal to 2, use the value 10, else use 20`
 
 As of version `0.2.21`, the `fold` function is unable to take bare operators as functions e.g. `fold 0 (+) list`, a wrapper will have to be defined like `mul`. This is because in version `0.2.21`, any zero argument sections cause an error - a fix will most likely be added next version.
+> This issue has been resolved in version `0.2.22`
 
 # Example
 ```

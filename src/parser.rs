@@ -109,6 +109,7 @@ impl Parser<'_> {
         self.consume();
 
         match args.len() {
+            0 => Node::Atom(op),
             1 => Node::Partial { op, arg: Box::new(args.pop().unwrap())},
             2 => {
                 let r = args.pop().unwrap();
