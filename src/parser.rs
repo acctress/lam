@@ -8,6 +8,8 @@ pub enum Token {
     LBracket,
     RBracket,
     Comma,
+    Semi,
+    Range,
     Number(f64),
     String(String),
     Char(char),
@@ -128,12 +130,44 @@ impl Parser<'_> {
             return Node::List(list);
         }
 
-        loop {
-            list.push(self.parse_expr());
+        let first_elem = self.parse_primary();
+
+        /* [x..y] or [x..y;z] */
+        if matches!(self.peek(), Some(Token::Range)) {
+            self.consume();
+
+            let to = self.parse_primary();
+            let step = if matches!(self.peek(), Some(Token::Semi)) {
+                self.consume();
+                self.parse_primary()
+            } else {
+                Node::Literal(1f64)
+            };
 
             match self.consume() {
+                Some(Token::RBracket) => {},
+                _ => panic!("expected ']' to close range"),
+            }
+
+            match (&first_elem, &to, &step) {
+                (Node::Literal(f), Node::Literal(t), Node::Literal(s)) => {
+                    let mut value = *f;
+                    while value < *t {
+                        list.push(Node::Literal(value));
+                        value += s;
+                    }
+                    return Node::List(list);
+                }
+                _ => panic!("range bounds must be numeric literals")
+            }
+        }
+
+        list.push(first_elem);
+
+        loop {
+            match self.consume() {
                 Some(Token::RBracket) => return Node::List(list),
-                Some(Token::Comma) => continue,
+                Some(Token::Comma) => list.push(self.parse_primary()),
                 _ => panic!("expected ',' or ']' in list"),
             }
         }
@@ -248,11 +282,31 @@ fn tokenize(input: &str) -> Vec<Token> {
             '[' => tokens.push(Token::LBracket),
             ']' => tokens.push(Token::RBracket),
             ',' => tokens.push(Token::Comma),
+            ';' => tokens.push(Token::Semi),
+            '.' if chars.peek().map_or(false, |(_, c)| *c == '.') => {
+                chars.next();
+                tokens.push(Token::Range)
+            }
             n if n.is_ascii_digit() => {
                 let start = pos;
                 let mut is_flt = false;
 
-                while chars.peek().is_some_and(|(_, c)| c.is_ascii_digit() || (*c == '.' && !is_flt && { is_flt = true; true })) {
+                while chars.peek().is_some_and(|(p, c)| {
+                    if c.is_ascii_digit() {
+                        true
+                    } else if *c == '.' && !is_flt {
+                        /* had the issue of ".." being a float, so uh set is_flt ONLY if peeked next char is a number */
+                        let nx = input.as_bytes().get(p + 1);
+                        if nx.map_or(false, |x| x.is_ascii_digit()) {
+                            is_flt = true;
+                            true
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                }) {
                     chars.next();
                 }
 
@@ -277,6 +331,8 @@ fn tokenize(input: &str) -> Vec<Token> {
                 if let Some((_, chr)) = chars.next() {
                     if chars.next().map_or(false, |(_, nxt)| nxt == '\'') {
                         tokens.push(Token::Char(chr));
+                    } else if chars.next().map_or(false, |(_, nxt)| nxt.is_ascii_alphanumeric()) {
+                        panic!("char literals can only contain one character");
                     } else {
                         panic!("unterminated char literal");
                     }
@@ -301,7 +357,7 @@ fn tokenize(input: &str) -> Vec<Token> {
 }
 
 fn is_delimiter(c: char) -> bool {
-    c.is_ascii_whitespace() || matches!(c, '(' | ')' | '[' | ']' | '\'' | '"')
+    c.is_ascii_whitespace() || matches!(c, '(' | ')' | '[' | ']' | '\'' | '"' | ';' | '.')
 }
 
 #[cfg(test)]

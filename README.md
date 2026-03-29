@@ -16,9 +16,9 @@ cargo test
 
 # Recent Changes
 
-* Version 0.2.1
-* Added comparison operators and `if` statements.
-* Truthy values are either `1` or `0`
+* Version 0.2.2
+* Added `zip` intrinsic.
+* Added range and step notations in lists.
 
 ```
 λ (fn (add x y) ((+ x) y))
@@ -31,6 +31,21 @@ cargo test
 
 λ (== 5) 5
 → 1
+
+λ zip [1,2,3,4] [5,6,7,8]
+→ [[1, 5], [2, 6], [3, 7], [4, 8]]
+
+λ [1..10]
+→ [1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+λ [1..100;10]
+→ [1, 11, 21, 31, 41, 51, 61, 71, 81, 91]
+
+λ [(+ 1 5), (+ 2 6), (+ 3 7)]
+→ [6, 8, 10]
+
+λ [(+ 1), (* 2), (- 3)]
+→ [<fn>, <fn>, <fn>]
 
 λ (if (== 1 2) 2 3)
 → 3

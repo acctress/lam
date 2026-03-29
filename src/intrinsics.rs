@@ -46,3 +46,21 @@ fn list(rt: &Runtime, mut args: Vec<Value>) -> Value {
         _ => panic!("list expects count to be a number"),
     }
 }
+
+inventory::submit!(Intrinsic { name: "zip", arity: 2, func: zip });
+fn zip(rt: &Runtime, mut args: Vec<Value>) -> Value {
+    let b = args.pop().unwrap();
+    let a = args.pop().unwrap();
+
+    let a_list = match a {
+        Value::List(items) => items,
+        _ => panic!("zip expects two lists")
+    };
+
+    let b_list = match b {
+        Value::List(items) => items,
+        _ => panic!("zip expects two lists")
+    };
+
+    Value::List(a_list.into_iter().zip(b_list).map(|(a, b)| Value::List(vec![a, b])).collect())
+}

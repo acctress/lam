@@ -248,7 +248,7 @@ impl std::fmt::Display for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Value::Num(n) => write!(f, "{}", n),
-            Value::Str(s) => write!(f, "{}", s),
+            Value::Str(s) => write!(f, "\"{}\"", s),
             Value::Char(c) => write!(f, "{}", c),
             Value::List(items) => {
                 write!(f, "[")?;
