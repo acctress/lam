@@ -1,3 +1,5 @@
+#![allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+
 use crate::runtime::{Runtime, Intrinsic, Value, LamFunc};
 
 inventory::submit!(Intrinsic { name: "+", arity: 2, func: add });

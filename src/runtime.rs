@@ -96,6 +96,14 @@ impl Runtime {
                 }));
                 env.set(name, f);
                 Value::Nil
+            },
+            Node::LambdaDef { params, body } => {
+                Value::Func(Box::new(LamFunc::UDef {
+                    name: String::new(),
+                    params,
+                    body: *body,
+                    env: env.clone()
+                }))
             }
         }
     }

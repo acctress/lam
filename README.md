@@ -16,10 +16,16 @@ cargo test
 
 # Recent Changes
 
-* Version 0.2.23
-* File execution support.
+* Version 0.2.24
+* Added lambda support e.g. `\x -> (+ x 1)`
 
 ```
+λ map (\x -> (+ x 1)) [1, 2, 3]
+→ [2, 3, 4]
+
+λ fold 0 (\a b -> (+ a b)) [1..11]
+→ 55
+
 λ (fn (add x y) ((+ x) y))
 λ add 3 4
 → 7

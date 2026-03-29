@@ -1,5 +1,4 @@
 use std::cmp::PartialEq;
-use crate::parser::Node::Application;
 
 #[derive(Debug, PartialEq)]
 pub enum Token {
@@ -10,6 +9,7 @@ pub enum Token {
     Comma,
     Semi,
     Range,
+    Lambda,
     Number(f64),
     String(String),
     Char(char),
@@ -26,6 +26,7 @@ pub enum Node {
     Let { name: String, value: Box<Node>, body: Box<Node> },
     If { cond: Box<Node>, then: Box<Node>, els: Box<Node> },
     FnDef { name: String, params: Vec<String>, body: Box<Node> },
+    LambdaDef { params: Vec<String>, body: Box<Node> }
 }
 
 pub struct Parser {
@@ -52,7 +53,7 @@ impl Parser {
 
         while self.do_primary() {
             let arg = self.parse_primary();
-            node = Application { func: Box::from(node), arg: Box::new(arg) };
+            node = Node::Application { func: Box::from(node), arg: Box::new(arg) };
         }
 
         node
@@ -78,6 +79,7 @@ impl Parser {
                         }
                     }
                 },
+                Token::Lambda => self.parse_lambda(),
                 Token::LBracket => self.parse_list(),
                 Token::Number(n) => Node::Literal(*n),
                 Token::Char(c) => Node::Literal(f64::from(*c as u32)),
@@ -107,7 +109,7 @@ impl Parser {
             2 => {
                 let r = args.pop().unwrap();
                 let l = args.pop().unwrap();
-                Application {
+                Node::Application {
                     func: Box::new(Node::Partial { op, arg: Box::new(l) }),
                     arg: Box::new(r)
                 }
@@ -165,6 +167,23 @@ impl Parser {
                 _ => panic!("expected ',' or ']' in list"),
             }
         }
+    }
+
+    fn parse_lambda(&mut self) -> Node {
+        /* parse e.g. (\x -> (+ x 1)) */
+        let mut params = vec![];
+        while !matches!(self.peek(), Some(Token::Symbol(s)) if s == "->") {
+            match self.consume() {
+                Some(Token::Symbol(s)) => params.push(s.clone()),
+                _ => panic!("expected parameter name in lambda"),
+            }
+        }
+
+        self.consume();
+
+        let body = self.parse_primary();
+
+        Node::LambdaDef { params, body: Box::new(body) }
     }
 
     fn parse_let(&mut self) -> Node {
@@ -281,6 +300,7 @@ fn tokenize(input: &str) -> Vec<Token> {
                 chars.next();
                 tokens.push(Token::Range);
             }
+            '\\' => tokens.push(Token::Lambda),
             n if n.is_ascii_digit() => {
                 let start = pos;
                 let mut is_flt = false;
