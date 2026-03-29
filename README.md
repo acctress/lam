@@ -10,7 +10,15 @@ cargo test
 
 # Recent Changes
 
-* Began rewrite in Rust.
+* Version 0.2.0
+* Added `let` bindings.
+* Added `fn` user defined function definitions.
+
+```
+λ (fn (add x y) ((+ x) y))
+λ add 3 4
+→ 7
+```
 
 # Example
 ```

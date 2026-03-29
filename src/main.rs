@@ -1,6 +1,6 @@
 use std::io::{self, Write, BufRead, stdin};
 use crate::parser::Parser;
-use crate::runtime::Runtime;
+use crate::runtime::{Env, Runtime};
 
 mod parser;
 mod runtime;
@@ -16,6 +16,7 @@ const MAGENTA: &str = "\x1b[38;5;219m";
 fn main() {
     std::panic::set_hook(Box::new(|_| {}));
 
+    let mut env = Env::new();
     let rt = Runtime::new();
 
     loop {
@@ -34,7 +35,7 @@ fn main() {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut parser = Parser::new(input);
             let node = parser.parse();
-            rt.exec(node)
+            rt.exec(node, &mut env)
         }));
 
         match result {

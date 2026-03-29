@@ -14,13 +14,15 @@ pub enum Token {
     Symbol(String), /* identifier but with a fancy name */
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Node {
     Literal(f64),
     Atom(String),
     Partial { op: String, arg: Box<Node> },
     Application { func: Box<Node>, arg: Box<Node> },
     List(Vec<Node>),
+    Let { name: String, value: Box<Node>, body: Box<Node> },
+    FnDef { name: String, params: Vec<String>, body: Box<Node> },
 }
 
 pub struct Parser<'a> {
@@ -63,15 +65,18 @@ impl Parser<'_> {
         match self.consume() {
             Some(token) => match token {
                 Token::LParen => {
-                    if matches!(self.peek(), Some(Token::Symbol(s)) if !s.chars().next().unwrap().is_ascii_alphabetic()) {
-                        self.parse_partial()
-                    } else {
-                        let i = self.parse_expr(); /* inner expr */
-                        match self.consume() {
-                            Some(Token::RParen) => {},
-                            _ => panic!("expected ')'"),
+                    match self.peek() {
+                        Some(Token::Symbol(s)) if s == "let" => self.parse_let(),
+                        Some(Token::Symbol(s)) if s == "fn" => self.parse_fn(),
+                        Some(Token::Symbol(s)) if !s.chars().next().unwrap().is_ascii_alphabetic() => self.parse_partial(),
+                        _ => {
+                            let i = self.parse_expr(); /* inner expr */
+                            match self.consume() {
+                                Some(Token::RParen) => {},
+                                _ => panic!("expected ')'"),
+                            }
+                            i
                         }
-                        i
                     }
                 },
                 Token::LBracket => self.parse_list(),
@@ -118,6 +123,73 @@ impl Parser<'_> {
                 _ => panic!("expected ',' or ']' in list"),
             }
         }
+    }
+
+    fn parse_let(&mut self) -> Node {
+        /* parse e.g. (let (x 5) (+ x 1)) */
+        /* ( -> let -> (name value) -> body -> ) */
+        self.consume();
+
+        match self.consume() {
+            Some(Token::LParen) => {},
+            _ => panic!("expected '(' after let")
+        }
+
+        let name = match self.consume() {
+            Some(Token::Symbol(s)) => s.clone(),
+            _ => panic!("expected variable name in let")
+        };
+
+        let value = self.parse_expr();
+
+        match self.consume() {
+            Some(Token::RParen) => {},
+            _ => panic!("expected ')' after let binding")
+        }
+
+        let body = self.parse_expr();
+
+        match self.consume() {
+            Some(Token::RParen) => {},
+            _ => panic!("expected ')' to close let"),
+        }
+
+        Node::Let { name, value: Box::new(value), body: Box::new(body) }
+    }
+
+    fn parse_fn(&mut self) -> Node {
+        /* parse e.g. (fn (double x) ((* 2) x)) */
+        /* ( -> fn -> (name params) -> body -> ) */
+        self.consume();
+
+        match self.consume() {
+            Some(Token::LParen) => {},
+            _ => panic!("expected '(' after fn"),
+        }
+
+        let name = match self.consume() {
+            Some(Token::Symbol(s)) => s.clone(),
+            _ => panic!("expected function name"),
+        };
+
+        let mut params = vec![];
+        while !matches!(self.peek(), Some(Token::RParen)) {
+            match self.consume() {
+                Some(Token::Symbol(s)) => params.push(s.clone()),
+                _ => panic!("expected parameter name"),
+            }
+        }
+
+        self.consume();
+
+        let body = self.parse_expr();
+
+        match self.consume() {
+            Some(Token::RParen) => {},
+            _ => panic!("expected ')' to close fn"),
+        }
+
+        Node::FnDef { name, params, body: Box::new(body) }
     }
 
     fn peek(&self) -> Option<&Token> {
