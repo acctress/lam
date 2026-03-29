@@ -1,0 +1,10 @@
+# a smaller quicksort algo in lam
+(fn (s l)
+    (if (== (len l) 0) []
+        (let (h (head l))
+        (let (t (tail l))
+            (append
+                (append (s (filter (> h) t)) [h])
+                (s (filter (<= h) t)))))))
+
+(putln (s [5, 2, 9, 1, 3, 6, 4, 8, 7, 10]))
