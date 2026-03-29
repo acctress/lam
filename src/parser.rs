@@ -48,6 +48,12 @@ impl Parser {
         self.parse_expr()
     }
 
+    pub fn parse_top_level(&mut self) -> Node {  self.parse_primary()  }
+
+    pub(crate) fn got_tokens(&self) -> bool {
+        self.pos < self.tokens.len()
+    }
+
     fn parse_expr(&mut self) -> Node {
         let mut node = self.parse_primary();
 
@@ -279,7 +285,15 @@ impl Parser {
     }
 
     fn do_primary(&self) -> bool {
-        matches!(self.peek(), Some(t) if !matches!(t, Token::RParen | Token::RBracket | Token::Comma))
+        match self.peek() {
+            Some(Token::RParen | Token::RBracket | Token::Comma) => false,
+            Some(Token::LParen) => {
+                !matches!(self.tokens.get(self.pos + 1),
+                    Some(Token::Symbol(s)) if matches!(s.as_str(), "fn" | "let" | "if"))
+            }
+            Some(_) => true,
+            None => false,
+        }
     }
 }
 

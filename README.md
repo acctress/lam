@@ -2,6 +2,19 @@
 A minimal, point-free functional Lisp. Auto-currying, operator sections, and right-to-left function composition.
 
 ```
+(fn (qsort xs)
+    (if (== (len xs) 0) []
+        (let (pivot (head xs))
+        (let (rest  (tail xs))
+        (let (lo (filter (\x -> (< x pivot)) rest))
+        (let (hi (filter (\x -> (>= x pivot)) rest))
+            (append (append (qsort lo) [pivot])
+                    (qsort hi))))))))
+
+(putln (qsort [5, 3, 8, 1, 9, 2, 7, 4, 6]))
+```
+
+```
 λ (fn (fib n) (if (== n 0) 0 (if (== n 1) 1 (+ (fib (- n 1)) (fib (- n 2))))))
 λ fib 10
 → 55
@@ -19,8 +32,10 @@ A minimal, point-free functional Lisp. Auto-currying, operator sections, and rig
 
 # Recent Changes
 
-* Version 0.2.26
-* Added `append` intrinsic.
+* Version 0.2.27
+* Added support for running script files correctly.
+* All top level expressions in script files must be wrapped in parentheses e.g. `putln "hey"` -> `(putln "hey")`.
+* Created `examples/quicksort.lam`.
 
 ```
 λ append [1..5] [6..11]

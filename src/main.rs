@@ -14,25 +14,26 @@ const YELLOW: &str = "\x1b[38;5;228m";
 const MAGENTA: &str = "\x1b[38;5;219m";
 
 fn main() {
-    std::panic::set_hook(Box::new(|_| {}));
-
     let mut env = Env::new();
     let rt = Runtime::new();
 
     let args: Vec<String> = std::env::args().collect();
     if args.len() > 1 {
         let src = std::fs::read_to_string(&args[1]).expect("failed to read file");
-        let mut env = Env::new();
+        let stripped: String = src.lines()
+            .map(|l| l.trim())
+            .filter(|l| !l.is_empty() && !l.starts_with("#"))
+            .collect::<Vec<_>>()
+            .join(" ");
 
-        for line in src.lines() {
-            let line = line.trim();
-            if line.is_empty() || line.starts_with('#') { continue; }
-
-            let mut parser = Parser::new(line);
-            let node = parser.parse();
+        let mut parser = Parser::new(&stripped);
+        while parser.got_tokens() {
+            let node = parser.parse_top_level();
             rt.exec(node, &mut env);
         }
     } else {
+        std::panic::set_hook(Box::new(|_| {}));
+
         loop {
             print!("{MAGENTA}λ{RESET} ");
             io::stdout().flush().unwrap();

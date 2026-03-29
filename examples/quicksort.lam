@@ -1,0 +1,10 @@
+(fn (qsort xs)
+    (if (== (len xs) 0) []
+        (let (pivot (head xs))
+        (let (rest  (tail xs))
+        (let (lo (filter (\x -> (< x pivot)) rest))
+        (let (hi (filter (\x -> (>= x pivot)) rest))
+            (append (append (qsort lo) [pivot])
+                    (qsort hi))))))))
+
+(putln (qsort [5, 3, 8, 1, 9, 2, 7, 4, 6]))
