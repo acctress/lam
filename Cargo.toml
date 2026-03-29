@@ -1,0 +1,8 @@
+[package]
+name = "lam"
+version = "0.1.2"
+edition = "2024"
+
+[dependencies]
+inventory = "0.3.23"
+rustyline = { version = "18.0.0"}
