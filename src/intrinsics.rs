@@ -1,4 +1,4 @@
-use crate::runtime::{Runtime, Intrinsic, Value};
+use crate::runtime::{Runtime, Intrinsic, Value, LamFunc};
 
 inventory::submit!(Intrinsic { name: "map", arity: 2, func: map });
 fn map(rt: &Runtime, mut args: Vec<Value>) -> Value {
@@ -19,4 +19,19 @@ fn putln(rt: &Runtime, mut args: Vec<Value>) -> Value {
     println!("{}", str);
 
     Value::Nil
+}
+
+inventory::submit!(Intrinsic { name: "compose", arity: 2, func: compose });
+fn compose(rt: &Runtime, mut args: Vec<Value>) -> Value {
+    let inner = args.pop().unwrap();
+    let outer = args.pop().unwrap();
+
+    /* g(f(x)) */
+    match (outer, inner) {
+        (Value::Func(f), Value::Func(g)) => Value::Func(Box::new(LamFunc::Composition {
+            outer: f,
+            inner: g,
+        })),
+        _ => panic!("compose expects two functions!")
+    }
 }
