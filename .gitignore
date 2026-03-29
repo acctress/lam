@@ -1,1 +1,6 @@
 /target
+/.idea
+/.idea/discord.xml
+/.idea/lam.iml
+/.idea/modules.xml
+/.idea/vcs.xml
