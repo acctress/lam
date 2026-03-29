@@ -16,11 +16,8 @@ cargo test
 
 # Recent Changes
 
-* Version 0.2.22
-* Removed `LamFunc::Partial` and `apply_op`.
-* Every operator is an intrinsic with auto currying
-* Operators can be used as bare functions e.g. (+), (==)
-* Added `fold`, `zip`
+* Version 0.2.23
+* File execution support.
 
 ```
 λ (fn (add x y) ((+ x) y))
