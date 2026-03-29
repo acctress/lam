@@ -62,7 +62,18 @@ impl Parser<'_> {
     fn parse_primary(&mut self) -> Node {
         match self.consume() {
             Some(token) => match token {
-                Token::LParen => self.parse_partial(),
+                Token::LParen => {
+                    if matches!(self.peek(), Some(Token::Symbol(s)) if !s.chars().next().unwrap().is_ascii_alphabetic()) {
+                        self.parse_partial()
+                    } else {
+                        let i = self.parse_expr(); /* inner expr */
+                        match self.consume() {
+                            Some(Token::RParen) => {},
+                            _ => panic!("expected ')'"),
+                        }
+                        i
+                    }
+                },
                 Token::LBracket => self.parse_list(),
                 Token::Number(n) => Node::Literal(*n),
                 Token::String(s) => Node::Atom(s.clone()),

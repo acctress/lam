@@ -12,3 +12,11 @@ fn map(rt: &Runtime, mut args: Vec<Value>) -> Value {
         _ => panic!("map expects a list as second argument"),
     }
 }
+
+inventory::submit!(Intrinsic { name: "putln", arity: 1, func: putln });
+fn putln(rt: &Runtime, mut args: Vec<Value>) -> Value {
+    let str = args.pop().unwrap();
+    println!("{}", str);
+
+    Value::Nil
+}

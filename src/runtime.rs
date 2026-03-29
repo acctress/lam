@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt::Formatter;
 use crate::parser::Node;
 
 pub type IntrinsicFn = fn(&Runtime, Vec<Value>) -> Value;
@@ -17,6 +18,7 @@ pub struct Runtime {
 
 #[derive(Clone)]
 pub enum Value {
+    Nil,
     Num(f64),
     Str(String),
     Char(char),
@@ -48,7 +50,13 @@ impl Runtime {
     pub fn eval(&self, node: Node) -> Value {
         match node {
             Node::Literal(n) => Value::Num(n),
-            Node::Atom(s) => self.lookup_intrinsic(&s),
+            Node::Atom(s) => {
+                if self.intrinsics.contains_key(&s) {
+                    self.lookup_intrinsic(&s)
+                } else {
+                    Value::Str(s)
+                }
+            },
             Node::List(items) => Value::List(items.into_iter().map(|n| self.eval(n)).collect()),
             Node::Partial { op, arg } => Value::Func(Box::new(LamFunc::Partial { op, arg: self.eval(*arg) })),
             Node::Application { func, arg } => self.apply(self.eval(*func), self.eval(*arg)),
@@ -151,6 +159,26 @@ mod tests {
                 }
             }
             _ => panic!("expected list"),
+        }
+    }
+}
+
+impl std::fmt::Display for Value {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Value::Num(n) => write!(f, "{}", n),
+            Value::Str(s) => write!(f, "{}", s),
+            Value::Char(c) => write!(f, "{}", c),
+            Value::List(items) => {
+                write!(f, "[")?;
+                for (i, item) in items.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}", item)?;
+                }
+                write!(f, "]")
+            }
+            Value::Func(_) => write!(f, "<fn>"),
+            Value::Nil => write!(f, "")
         }
     }
 }
