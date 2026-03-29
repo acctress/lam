@@ -170,3 +170,72 @@ fn fold(rt: &Runtime, mut args: Vec<Value>) -> Value {
 
     list_value.into_iter().fold(init, |acc, x| rt.apply(rt.apply(func.clone(), acc), x))
 }
+
+inventory::submit!(Intrinsic { name: "concat", arity: 2, func: concat });
+fn concat(_rt: &Runtime, mut args: Vec<Value>) -> Value {
+    let Value::Str(a) = args.pop().unwrap() else { panic!("concat expects two strings") };
+    let Value::Str(b) = args.pop().unwrap() else { panic!("concat expects two strings") };
+    Value::Str(format!("{b}{a}"))
+}
+
+inventory::submit!(Intrinsic { name: "len", arity: 1, func: len });
+fn len(_rt: &Runtime, mut args: Vec<Value>) -> Value {
+    match args.pop().unwrap() {
+        Value::Str(s) => Value::Num(s.len() as f64),
+        Value::List(l) => Value::Num(l.len() as f64),
+        _ => panic!("len expects a string or a list")
+    }
+}
+
+inventory::submit!(Intrinsic { name: "chars", arity: 1, func: chars });
+fn chars(_rt: &Runtime, mut args: Vec<Value>) -> Value {
+    let Value::Str(s) = args.pop().unwrap() else { panic!("chars expects one string") };
+    Value::List(s.chars().map(|c| Value::Num(f64::from(c as u32))).collect())
+}
+
+inventory::submit!(Intrinsic { name: "str", arity: 1, func: str });
+fn str(_rt: &Runtime, mut args: Vec<Value>) -> Value {
+    let Value::List(nums) = args.pop().unwrap() else { panic!("str expects one list") };
+    Value::Str(nums.into_iter().map(|c| {
+        let Value::Num(n) = c else { panic!("str expects a list of numbers") };
+        char::from(n as u8)
+    }).collect())
+}
+
+inventory::submit!(Intrinsic { name: "split", arity: 2, func: split });
+fn split(_rt: &Runtime, mut args: Vec<Value>) -> Value {
+    let Value::Str(string) = args.pop().unwrap() else { panic!("split expects two strings") };
+    let Value::Str(delim) = args.pop().unwrap() else { panic!("split expects two strings") };
+    Value::List(string.split(&delim).map(|i| { Value::Str(i.to_string()) }).collect())
+}
+
+inventory::submit!(Intrinsic { name: "head", arity: 1, func: head });
+fn head(_rt: &Runtime, mut args: Vec<Value>) -> Value {
+    let Value::List(list) = args.pop().unwrap() else { panic!("head expects one list") };
+    if list.is_empty() { return Value::Nil }
+    list.first().unwrap().clone()
+}
+
+inventory::submit!(Intrinsic { name: "tail", arity: 1, func: tail });
+fn tail(_rt: &Runtime, mut args: Vec<Value>) -> Value {
+    let Value::List(list) = args.pop().unwrap() else { panic!("tail expects one list") };
+    if list.is_empty() { return Value::Nil }
+    Value::List(list[1..].to_vec())
+}
+
+inventory::submit!(Intrinsic { name: "reverse", arity: 1, func: reverse });
+fn reverse(_rt: &Runtime, mut args: Vec<Value>) -> Value {
+    let Value::List(mut list) = args.pop().unwrap() else { panic!("tail expects one list") };
+    if list.is_empty() { return Value::Nil }
+    list.reverse();
+    Value::List(list)
+}
+
+inventory::submit!(Intrinsic { name: "filter", arity: 2, func: filter });
+fn filter(rt: &Runtime, mut args: Vec<Value>) -> Value {
+    let Value::List(list) = args.pop().unwrap() else { panic!("filter needs a list") };
+    let pred = args.pop().unwrap();
+    Value::List(list.into_iter().filter(|item| {
+        matches!(rt.apply(pred.clone(), item.clone()), Value::Num(n) if n != 0f64)
+    }).collect())
+}

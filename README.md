@@ -19,15 +19,65 @@ A minimal, point-free functional Lisp. Auto-currying, operator sections, and rig
 
 # Recent Changes
 
-* Version 0.2.24
-* Added lambda support e.g. `\x -> (+ x 1)`
+* Version 0.2.25
+* Added string intrinsics e.g. `concat`, `str`, `chars`
+* Added list operation intrinsics e.g. `head`, `tail`, `reverse`, `filter`
 
 ```
+# we use a lambda to be explicit with the order of the comparison, x IS GREATER THAN 5
+λ filter (\x -> (> x 5)) [1..11]
+→ [6, 7, 8, 9, 10]
+
+# a quirk: this reads as x IS GREATER THAN 5 but really it means "is 5 greater than x"
+# if this predicate results in true, it'll filter the numbers where 5 is greater than x
+# if you want it to be explicit, just write a lambda like above
+λ filter (> 5) [1..11]
+→ [1, 2, 3, 4]
+
+λ filter (== 5) [1..100]
+→ [5]
+
+λ str (reverse (chars "hello"))
+→ "olleh"
+
+λ concat (head (split " " "hello world")) "!"
+→ "hello!"
+
 λ map (\x -> (+ x 1)) [1, 2, 3]
 → [2, 3, 4]
 
 λ fold 0 (\a b -> (+ a b)) [1..11]
 → 55
+
+λ map (\x -> (str [x])) [104, 101, 108, 108, 111]
+→ ["h", "e", "l", "l", "o"]
+
+λ map (\s -> (len s)) (split " " "the quick brown fox")
+→ [3, 5, 5, 3]
+
+λ (fn (fact n) (if (== n 0) 1 (* n (fact (- n 1)))))
+λ map fact [1..11]
+→ [1, 2, 6, 24, 120, 720, 5040, 40320, 362880, 3628800]
+
+λ (fn (apply_all fns x) (map (\f -> (f x)) fns))
+λ apply_all [(+ 1), (* 2), (- 3)] 10
+→ [11, 20, -7]
+
+λ (fn (fib n) (if (== n 0) 0 (if (== n 1) 1 (+ (fib (- n 1)) (fib (- n 2))))))
+λ map fib [0..15]
+→ [0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377]
+
+λ fold "" (\acc x -> (concat acc (concat x " "))) (split "" "hello")
+→ " h e l l o  "
+
+λ map (\pair -> (fold 0 (+) pair)) [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+→ [6, 15, 24]
+
+λ len (map (\x -> (* x x)) [1..1001])
+→ 1000
+
+λ fold 0 (+) (map (\x -> (* x x)) [1..101])
+→ 338350
 
 λ (fn (add x y) ((+ x) y))
 λ add 3 4
@@ -98,6 +148,21 @@ A minimal, point-free functional Lisp. Auto-currying, operator sections, and rig
 
 λ map (compose (+ 10) (* 2)) [1, 2, 3]
 → [12, 14, 16]
+
+λ str [97..123]
+→ "abcdefghijklmnopqrstuvwxyz"
+
+λ chars (str [97..123])
+→ [97,  98,  99,  100, 101, 
+   102, 103, 104, 105, 106, 
+   107, 108, 109, 110, 111, 
+   112, 113, 114, 115, 116, 
+   117, 118, 119, 120, 121, 
+   122
+]
+
+λ split " " "hello world!"
+→ ["hello", "world!"]
 ```
 
 `(if (== 1 2) 10 20)` looks funky, but it's really simple. It essentially says: `if 1 is equal to 2, use the value 10, else use 20`

@@ -27,7 +27,6 @@ pub enum Value {
     Nil,
     Num(f64),
     Str(String),
-    Char(char),
     List(Vec<Value>),
     Func(Box<LamFunc>),
 }
@@ -61,8 +60,6 @@ impl Runtime {
                     v.clone()
                 } else if self.intrinsics.contains_key(&s) {
                     self.lookup_intrinsic(&s)
-                } else if s.len() == 1 {
-                    Value::Char(s.chars().next().unwrap())
                 } else {
                     Value::Str(s)
                 }
@@ -197,7 +194,6 @@ impl std::fmt::Display for Value {
         match self {
             Value::Num(n) => write!(f, "{n}"),
             Value::Str(s) => write!(f, "\"{s}\""),
-            Value::Char(c) => write!(f, "{c}"),
             Value::List(items) => {
                 write!(f, "[")?;
                 for (i, item) in items.iter().enumerate() {

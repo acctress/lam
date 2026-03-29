@@ -54,7 +54,7 @@ fn main() {
 
             match result {
                 Ok(value) => match &value {
-                    runtime::Value::Num(_) | runtime::Value::Char(_) => println!("{CYAN}→ {value}{RESET}"),
+                    runtime::Value::Num(_) => println!("{CYAN}→ {value}{RESET}"),
                     runtime::Value::Str(_) => println!("{GREEN}→ {value}{RESET}"),
                     runtime::Value::List(_) => println!("{YELLOW}→ {value}{RESET}"),
                     runtime::Value::Func(_) | runtime::Value::Nil => {},
