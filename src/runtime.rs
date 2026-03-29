@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use crate::parser::Node;
 
-pub type IntrinsicFn = fn(Vec<Value>) -> Value;
+pub type IntrinsicFn = fn(&Runtime, Vec<Value>) -> Value;
 
 pub struct Intrinsic {
     pub name: &'static str,
@@ -15,6 +15,7 @@ pub struct Runtime {
     intrinsics: HashMap<String, (IntrinsicFn, usize)>,
 }
 
+#[derive(Clone)]
 pub enum Value {
     Num(f64),
     Str(String),
@@ -23,6 +24,7 @@ pub enum Value {
     Func(Box<LamFunc>),
 }
 
+#[derive(Clone)]
 pub enum LamFunc {
     Partial { op: String, arg: Value },
     Intrinsic { name: String, args: Vec<Value>, arity: usize },
@@ -53,7 +55,7 @@ impl Runtime {
         }
     }
 
-    fn apply(&self, func: Value, arg: Value) -> Value {
+    pub(crate) fn apply(&self, func: Value, arg: Value) -> Value {
         match func {
             Value::Func(f) => match *f {
                 LamFunc::Partial { op, arg: left } => {
@@ -93,7 +95,7 @@ impl Runtime {
 
     fn call_intrinsic(&self, name: &str, args: Vec<Value>) -> Value {
         match self.intrinsics.get(name) {
-            Some((func, _)) => func(args),
+            Some((func, _)) => func(self, args),
             None => panic!("unknown intrinsic '{}'", name)
         }
     }
@@ -126,6 +128,29 @@ mod tests {
         match result {
             Value::Num(n) => assert_eq!(8.0, n),
             _ => panic!("expected number"),
+        }
+    }
+
+    #[test]
+    fn eval_map() {
+        let mut p = Parser::new("map (+ 1) [1, 2, 3]");
+        let node = p.parse();
+        let rt = Runtime::new();
+        let result = rt.exec(node);
+
+        match result {
+            Value::List(items) => {
+                assert_eq!(3, items.len());
+                match (&items[0], &items[1], &items[2]) {
+                    (Value::Num(a), Value::Num(b), Value::Num(c)) => {
+                        assert_eq!(2.0, *a);
+                        assert_eq!(3.0, *b);
+                        assert_eq!(4.0, *c);
+                    }
+                    _ => panic!("expected numbers"),
+                }
+            }
+            _ => panic!("expected list"),
         }
     }
 }
