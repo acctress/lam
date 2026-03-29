@@ -1,13 +1,9 @@
 name: Rust Release
-
 on:
   push:
-    tags:
-      - 'v*'
-
+    branches: [ "rewrite/core" ]
 env:
   CARGO_TERM_COLOR: always
-
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -15,7 +11,6 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run tests
         run: cargo test --verbose
-
   build:
     needs: test
     strategy:
@@ -33,31 +28,24 @@ jobs:
           - target: aarch64-apple-darwin
             os: macos-latest
             name: lam-macos-aarch64
-
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-
       - name: Install target
         run: rustup target add ${{ matrix.target }}
-
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }}
-
       - name: Rename binary (Unix)
         if: matrix.os != 'windows-latest'
         run: mv target/${{ matrix.target }}/release/lam ${{ matrix.name }}
-
       - name: Rename binary (Windows)
         if: matrix.os == 'windows-latest'
         run: mv target/${{ matrix.target }}/release/lam.exe ${{ matrix.name }}
-
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}
           path: ${{ matrix.name }}
-
   release:
     needs: build
     runs-on: ubuntu-latest
@@ -65,14 +53,17 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-
+      - name: Get version from Cargo.toml
+        id: version
+        run: echo "VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*\"\(.*\)\"/\1/')" >> $GITHUB_OUTPUT
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.version.outputs.VERSION }}
+          name: v${{ steps.version.outputs.VERSION }}
           files: artifacts/**/*
           generate_release_notes: true
