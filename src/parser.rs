@@ -1,16 +1,26 @@
+use std::cmp::PartialEq;
+use std::fmt::format;
+use crate::parser::Token::RBracket;
+
 #[derive(Debug, PartialEq)]
 pub enum Token {
     LParen,
     RParen,
+    LBracket,
+    RBracket,
     Number(f64),
     String(String),
     Char(char),
     Symbol(String), /* identifier but with a fancy name */
 }
 
+#[derive(Debug)]
 pub enum Node {
-    Literal(i64),
+    Literal(f64),
+    Atom(String),
     Partial { op: String, arg: Box<Node> },
+    Application { func: Box<Node>, arg: Box<Node> },
+    List(Vec<Node>),
 }
 
 pub struct Parser<'a> {
@@ -34,8 +44,72 @@ impl Parser<'_> {
         &self.tokens
     }
 
-    pub fn dbg(&self) {
-        println!("{:?}", self.tokens);
+    pub fn parse(&mut self) -> Node {
+        self.parse_expr()
+    }
+
+    fn parse_expr(&mut self) -> Node {
+        self.parse_primary()
+    }
+
+    fn parse_primary(&mut self) -> Node {
+        match self.consume() {
+            Some(token) => match token {
+                Token::LParen => self.parse_partial(),
+                Token::LBracket => self.parse_list(),
+                Token::Number(n) => Node::Literal(*n),
+                Token::String(s) => Node::Atom(s.clone()),
+                Token::Char(c) => Node::Literal(*c as u32 as f64),
+                Token::Symbol(s) => Node::Atom(s.clone()),
+                _ => panic!("unexpected token '{:?}'", token),
+            }
+            _ => panic!("unexpected end of input")
+        }
+    }
+
+    fn parse_partial(&mut self) -> Node {
+        let op = match self.consume() {
+            Some(Token::Symbol(s)) => s.clone(),
+            _ => panic!("expected operator in partial")
+        };
+
+        let arg = self.parse_expr();
+
+        match self.consume() {
+            Some(Token::RParen) => {},
+            _ => panic!("expected ')' to close partial")
+        }
+
+        Node::Partial { op, arg: Box::new(arg) }
+    }
+
+    fn parse_list(&mut self) -> Node {
+        let mut list: Vec<Node> = vec![];
+
+        if matches!(self.peek(), Some(Token::RBracket)) {
+            self.consume();
+            return Node::List(list);
+        }
+
+        loop {
+            list.push(self.parse_expr());
+
+            match self.consume() {
+                Some(Token::RBracket) => return Node::List(list),
+                Some(Token::Symbol(s)) if s == "," => continue,
+                _ => panic!("expected ',' or ']' in list"),
+            }
+        }
+    }
+
+    fn peek(&self) -> Option<&Token> {
+        self.tokens.get(self.pos)
+    }
+
+    fn consume(&mut self) -> Option<&Token> {
+        let t = self.tokens.get(self.pos);
+        self.pos += 1;
+        t
     }
 }
 
@@ -48,6 +122,8 @@ fn tokenize(input: &str) -> Vec<Token> {
             c if c.is_ascii_whitespace() => continue,
             '(' => tokens.push(Token::LParen),
             ')' => tokens.push(Token::RParen),
+            '[' => tokens.push(Token::LBracket),
+            ']' => tokens.push(Token::RBracket),
             n if n.is_ascii_digit() => {
                 let start = pos;
                 let mut is_flt = false;
@@ -60,18 +136,6 @@ fn tokenize(input: &str) -> Vec<Token> {
                 let value = &input[start..end];
 
                 tokens.push(Token::Number(value.parse::<f64>().expect(&format!("failed to parse '{}' as number", value))));
-            },
-            c if c.is_ascii_alphabetic() => {
-                let start = pos;
-
-                while chars.peek().is_some_and(|(_, c)| c.is_ascii_alphabetic()) {
-                    chars.next();
-                }
-
-                let end = chars.peek().map_or(input.len(), |(i, _)| *i);
-                let value = &input[start..end];
-
-                tokens.push(Token::Symbol(value.to_string()));
             },
             q if q == '"' => {
                 let start = pos + 1;
@@ -93,16 +157,32 @@ fn tokenize(input: &str) -> Vec<Token> {
                         panic!("unterminated char literal");
                     }
                 }
-            }
-            _ => continue,
+            },
+            c => {
+                let start = pos;
+
+                while chars.peek().is_some_and(|(_, c)| !is_delimiter(*c)) {
+                    chars.next();
+                }
+
+                let end = chars.peek().map_or(input.len(), |(i, _)| *i);
+                let value = &input[start..end];
+
+                tokens.push(Token::Symbol(value.to_string()));
+            },
         }
     }
 
     tokens
 }
 
+fn is_delimiter(c: char) -> bool {
+    c.is_ascii_whitespace() || matches!(c, '(' | ')' | '[' | ']' | '\'' | '"' | ',')
+}
+
 #[cfg(test)]
 mod tests {
+    use std::ops::Deref;
     use super::*;
 
     #[test]
@@ -137,5 +217,107 @@ mod tests {
 
         assert_eq!(1, p.tokens().len());
         assert_eq!(Token::Char('c'), *p.tokens().get(0).unwrap());
+    }
+
+    #[test]
+    fn parse_partial() {
+        let mut p = Parser::new("(+ 5)");
+        let node = p.parse();
+
+        match node {
+            Node::Partial { op, arg } => {
+                assert_eq!("+".to_string(), op );
+                match *arg {
+                    Node::Literal(n) => assert_eq!(5.0, n),
+                    _ => panic!("expected 5 as arg")
+                }
+            }
+
+            _ => panic!("expected partial")
+        }
+    }
+
+    #[test]
+    fn parse_literal() {
+        let mut p = Parser::new("42");
+        let node = p.parse();
+
+        match node {
+            Node::Literal(n) => assert_eq!(42.0, n),
+            _ => panic!("expected literal"),
+        }
+    }
+
+    #[test]
+    fn parse_symbol() {
+        let mut p = Parser::new("map");
+        let node = p.parse();
+
+        match node {
+            Node::Atom(s) => assert_eq!("map", s),
+            _ => panic!("expected atom"),
+        }
+    }
+
+    #[test]
+    fn parse_char_as_literal() {
+        let mut p = Parser::new("'a'");
+        let node = p.parse();
+
+        match node {
+            Node::Literal(n) => assert_eq!(97.0, n),
+            _ => panic!("expected literal from char"),
+        }
+    }
+
+    #[test]
+    fn parse_empty_list() {
+        let mut p = Parser::new("[]");
+        let node = p.parse();
+
+        match node {
+            Node::List(items) => assert_eq!(0, items.len()),
+            _ => panic!("expected empty list"),
+        }
+    }
+
+    #[test]
+    fn parse_list() {
+        let mut p = Parser::new("[1, 2, 3]");
+        let node = p.parse();
+
+        match node {
+            Node::List(items) => {
+                assert_eq!(3, items.len());
+                match &items[0] {
+                    Node::Literal(n) => assert_eq!(1.0, *n),
+                    _ => panic!("expected literal"),
+                }
+            }
+            _ => panic!("expected list"),
+        }
+    }
+
+    #[test]
+    fn parse_nested_partial() {
+        let mut p = Parser::new("(+ (+ 1))");
+        let node = p.parse();
+
+        match node {
+            Node::Partial { op, arg } => {
+                assert_eq!("+", op);
+                match *arg {
+                    Node::Partial { op: inner_op, arg: inner_arg } => {
+                        assert_eq!("+", inner_op);
+                        match *inner_arg {
+                            Node::Literal(n) => assert_eq!(1.0, n),
+                            _ => panic!("expected literal"),
+                        }
+                    }
+                    _ => panic!("expected inner partial"),
+                }
+            }
+            _ => panic!("expected partial"),
+        }
     }
 }
