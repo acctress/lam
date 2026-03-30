@@ -1,0 +1,3 @@
+(fn (upper s) (str (map (\c -> (if (>= c 97) (if (<= c 122) (- c 32) c) c)) (chars s))))
+(fn (lower s) (str (map (\c -> (if (>= c 65) (if (<= c 90) (+ c 32) c) c)) (chars s))))
+(fn (repeat n s) (fold "" (\acc _ -> (concat acc s)) [1..n]))

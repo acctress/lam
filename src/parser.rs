@@ -9,11 +9,28 @@ pub enum Token {
     Comma,
     Semi,
     Range,
+    Spread,
     Lambda,
     Number(f64),
     String(String),
     Char(char),
     Symbol(String), /* identifier but with a fancy name */
+}
+
+#[derive(Debug, Clone)]
+pub struct MatchArm {
+    pub pattern: Pattern,
+    pub guard: Option<Box<Node>>,
+    pub body: Box<Node>,
+}
+
+#[derive(Debug, Clone)]
+pub enum Pattern {
+    Literal(f64),
+    StringLit(String),
+    Wildcard,
+    Var(String),
+    List(Vec<Pattern>, Option<String>),
 }
 
 #[derive(Debug, Clone)]
@@ -26,7 +43,9 @@ pub enum Node {
     Let { name: String, value: Box<Node>, body: Box<Node> },
     If { cond: Box<Node>, then: Box<Node>, els: Box<Node> },
     FnDef { name: String, params: Vec<String>, body: Box<Node> },
-    LambdaDef { params: Vec<String>, body: Box<Node> }
+    LambdaDef { params: Vec<String>, body: Box<Node> },
+    Match { expr: Box<Node>, arms: Vec<MatchArm> },
+    UseModule { path: String },
 }
 
 pub struct Parser {
@@ -88,6 +107,8 @@ impl Parser {
                         Some(Token::Symbol(s)) if s == "let" => self.parse_let(),
                         Some(Token::Symbol(s)) if s == "fn" => self.parse_fn(),
                         Some(Token::Symbol(s)) if s == "if" => self.parse_if(),
+                        Some(Token::Symbol(s)) if s == "match" => self.parse_match(),
+                        Some(Token::Symbol(s)) if s == "use" => self.parse_use(),
                         Some(Token::Symbol(s)) if !s.chars().next().unwrap().is_ascii_alphabetic() => self.parse_partial(),
                         _ => {
                             let i = self.parse_expr();
@@ -289,6 +310,93 @@ impl Parser {
         Node::If { cond: Box::new(cond), then: Box::new(then), els: Box::new(els) }
     }
 
+    fn parse_match(&mut self) -> Node {
+        self.consume();
+
+        let scrutinee = self.parse_primary();
+        let mut arms = vec![];
+
+        while matches!(self.peek(), Some(Token::LParen)) {
+            self.consume();
+            let pattern = self.parse_pattern();
+            let guard = if matches!(self.peek(), Some(Token::Symbol(s)) if s == "if") {
+                self.consume();
+                Some(Box::new(self.parse_primary()))
+            } else {
+                None
+            };
+
+            let body = self.parse_primary();
+            match self.consume() {
+                Some(Token::RParen) => {},
+                _ => panic!("expected ')' to close match arm")
+            }
+
+            arms.push(MatchArm { pattern, guard, body: Box::new(body) });
+        }
+
+        match self.consume() {
+            Some(Token::RParen) => {},
+            _ => panic!("expected ')' to close match")
+        }
+
+        Node::Match { expr: Box::new(scrutinee), arms }
+    }
+
+    fn parse_use(&mut self) -> Node {
+        self.consume();
+        let path = match self.consume() {
+            Some(Token::String(s)) => s.clone(),
+            _ => panic!("use expects a file path string"),
+        };
+        match self.consume() {
+            Some(Token::RParen) => {},
+            _ => panic!("expected ')' to close use")
+        }
+
+        Node::UseModule { path }
+    }
+
+    fn parse_pattern(&mut self) -> Pattern {
+        match self.consume() {
+            Some(Token::Number(n)) => Pattern::Literal(*n),
+            Some(Token::String(s)) => Pattern::StringLit(s.clone()),
+            Some(Token::Symbol(s)) if s == "_" => Pattern::Wildcard,
+            Some(Token::Symbol(s)) => Pattern::Var(s.clone()),
+            Some(Token::LBracket) => self.parse_list_pattern(),
+            _ => panic!("unexpected token in pattern")
+        }
+    }
+
+    fn parse_list_pattern(&mut self) -> Pattern {
+        // println!("list pattern tokens: {&self.tokens[self.pos..]:?}");
+        let mut patterns = vec![];
+        let mut rest = None;
+
+        if matches!(self.peek(), Some(Token::RBracket)) {
+            self.consume();
+            return Pattern::List(patterns, rest);
+        }
+
+        loop {
+            if matches!(self.peek(), Some(Token::Spread)) {
+                self.consume();
+                match self.consume() {
+                    Some(Token::Symbol(s)) => rest = Some(s.clone()),
+                    _ => panic!("expected name after ...")
+                }
+            } else {
+                patterns.push(self.parse_pattern());
+            }
+
+            match self.consume() {
+                Some(Token::RBracket) => return Pattern::List(patterns, rest),
+                Some(Token::Comma) => continue,
+                _ => panic!("expected ',' or ']' in list pattern")
+            }
+        }
+    }
+
     fn peek(&self) -> Option<&Token> {
         self.tokens.get(self.pos)
     }
@@ -328,7 +436,12 @@ fn tokenize(input: &str) -> Vec<Token> {
             ';' => tokens.push(Token::Semi),
             '.' if chars.peek().is_some_and(|(_, c)| *c == '.') => {
                 chars.next();
-                tokens.push(Token::Range);
+                if chars.peek().is_some_and(|(_, c)| *c == '.') {
+                    chars.next();
+                    tokens.push(Token::Spread);
+                } else {
+                    tokens.push(Token::Range);
+                }
             }
             '\\' => tokens.push(Token::Lambda),
             n if n.is_ascii_digit() => {
@@ -401,5 +514,5 @@ fn tokenize(input: &str) -> Vec<Token> {
 }
 
 fn is_delimiter(c: char) -> bool {
-    c.is_ascii_whitespace() || matches!(c, '(' | ')' | '[' | ']' | '\'' | '"' | ';' | '.')
+    c.is_ascii_whitespace() || matches!(c, '(' | ')' | '[' | ']' | '\'' | '"' | ';' | '.' | ',')
 }

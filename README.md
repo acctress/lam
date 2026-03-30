@@ -32,19 +32,46 @@ A minimal, point-free functional Lisp. Auto-currying, operator sections, and rig
 
 # Recent Changes
 
-* Version 0.2.28
-* Added `|>` pipe chaining support.
+* Version 0.3.0
+* Added module support, and standard library in `std`.
+* Added pattern matching.
 
-Pipe chaining in Lam takes the value on the left and passes it as the last argument to the right hand side, it's essentially just syntactic sugar - the parser desugars it into an application.
+To import modules in the REPL or script files, simply run:
+```
+(use "module")
+```
 
 For example:
 ```
-[1..11] |> filter (> 5) |> map (+ 1) |> putln
+λ (use "std/list")
+λ take 2 [1..11]
+→ [1, 2]
 ```
-Will be desugared to:
+
+Pattern matching is trivial:
 ```
-putln (map (+ 1) (filter (> 5) [1..11]))
+λ (fn (how_big x) (match x (0 "zero") (1 "one") (n if (> n 100) "big") (_ "idk")))
+
+λ how_big 999
+→ "big"
+
+λ how_big 42
+→ "idk"
+
+λ how_big 0
+→ "zero"
+
+λ how_big 1
+→ "one"
 ```
+
+An arm in a pattern follows: `(<pattern> <body>)` or `(<pattern> <guard> <body>)`
+* `(0 "zero")` is a literal pattern - matches if the value equals `0`
+* `("hello" "greeting")` is a string literal pattern - matches string
+* `(_ "idk")` `_` is a wildcard, will match anything but will not be bound
+* `(x (+ x 1))` variable pattern, matches anything, binds the value to `x` for use in the `<body>`
+* `([h, ...t] h)` list destructuring, `h` binds to the first element, `t` is bound to the rest of the list.
+If nothing matches, lam panics with a `non exhaustive match`.
 
 ```
 λ "hello world" |> split " " |> len

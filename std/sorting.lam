@@ -1,0 +1,7 @@
+(fn (quicksort l)
+    (if (== (len l) 0) []
+        (let (h (head l))
+        (let (t (tail l))
+            (append
+                (append (quicksort (filter (> h) t)) [h])
+                (quicksort (filter (<= h) t)))))))

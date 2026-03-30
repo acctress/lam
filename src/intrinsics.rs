@@ -220,21 +220,21 @@ fn split(_rt: &Runtime, mut args: Vec<Value>) -> Value {
 inventory::submit!(Intrinsic { name: "head", arity: 1, func: head });
 fn head(_rt: &Runtime, mut args: Vec<Value>) -> Value {
     let Value::List(list) = args.pop().unwrap() else { panic!("head expects one list") };
-    if list.is_empty() { return Value::Nil }
+    if list.is_empty() { return Value::List(vec![]) }
     list.first().unwrap().clone()
 }
 
 inventory::submit!(Intrinsic { name: "tail", arity: 1, func: tail });
 fn tail(_rt: &Runtime, mut args: Vec<Value>) -> Value {
     let Value::List(list) = args.pop().unwrap() else { panic!("tail expects one list") };
-    if list.is_empty() { return Value::Nil }
+    if list.is_empty() { return Value::List(vec![]) }
     Value::List(list[1..].to_vec())
 }
 
 inventory::submit!(Intrinsic { name: "reverse", arity: 1, func: reverse });
 fn reverse(_rt: &Runtime, mut args: Vec<Value>) -> Value {
     let Value::List(mut list) = args.pop().unwrap() else { panic!("tail expects one list") };
-    if list.is_empty() { return Value::Nil }
+    if list.is_empty() { return Value::List(vec![]) }
     list.reverse();
     Value::List(list)
 }
