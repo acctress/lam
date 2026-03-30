@@ -46,7 +46,6 @@ fn main() {
             let input = l.trim();
             if input.is_empty() { continue; }
 
-
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let mut parser = Parser::new(input);
                 let node = parser.parse();

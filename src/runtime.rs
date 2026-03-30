@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 use std::fmt::Formatter;
+use include_dir::{include_dir, Dir};
 use crate::parser::{Node, Parser, Pattern};
+
+static STD_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/std");
 
 pub type IntrinsicFn = fn(&Runtime, Vec<Value>) -> Value;
 
@@ -135,7 +138,15 @@ impl Runtime {
                     s
                 };
 
-                let src = std::fs::read_to_string(p).expect("failed to read file");
+                let src = if p.starts_with("std/") {
+                    let em_path = &p["std/".len()..];
+                    if let Some(f) = STD_DIR.get_file(&em_path) {
+                        f.contents_utf8().expect("invalid utf8 in std file").to_string()
+                    } else {
+                        panic!("unknown std module '{em_path}'")
+                    }
+                } else { std::fs::read_to_string(&p).expect("failed to read file") };
+
                 let stripped: String = src.lines()
                     .map(|l| l.trim())
                     .filter(|l| !l.is_empty() && !l.starts_with("#"))

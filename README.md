@@ -32,9 +32,8 @@ A minimal, point-free functional Lisp. Auto-currying, operator sections, and rig
 
 # Recent Changes
 
-* Version 0.3.0
-* Added module support, and standard library in `std`.
-* Added pattern matching.
+* Version 0.3.1
+* `std` is embedded into the binary.
 
 To import modules in the REPL or script files, simply run:
 ```
