@@ -32,12 +32,30 @@ A minimal, point-free functional Lisp. Auto-currying, operator sections, and rig
 
 # Recent Changes
 
-* Version 0.2.27
-* Added support for running script files correctly.
-* All top level expressions in script files must be wrapped in parentheses e.g. `putln "hey"` -> `(putln "hey")`.
-* Created `examples/quicksort.lam`.
+* Version 0.2.28
+* Added `|>` pipe chaining support.
+
+Pipe chaining in Lam takes the value on the left and passes it as the last argument to the right hand side, it's essentially just syntactic sugar - the parser desugars it into an application.
+
+For example:
+```
+[1..11] |> filter (> 5) |> map (+ 1) |> putln
+```
+Will be desugared to:
+```
+putln (map (+ 1) (filter (> 5) [1..11]))
+```
 
 ```
+λ "hello world" |> split " " |> len
+→ 2
+
+λ [1..101] |> filter (\x -> (== 0 (- x (* 2 (/ x 2))))) |> len
+→ 100
+
+λ fold 0 (+) ([1..11] |> map (\x -> (* x x)))
+→ 385
+
 λ append [1..5] [6..11]
 → [1, 2, 3, 4, 6, 7, 8, 9, 10]
 

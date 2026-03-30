@@ -62,6 +62,21 @@ impl Parser {
             node = Node::Application { func: Box::from(node), arg: Box::new(arg) };
         }
 
+        /* x |> y */
+        while matches!(self.peek(), Some(Token::Symbol(s)) if s == "|>") {
+            self.consume();
+
+            let mut f = self.parse_primary();
+
+            /* get partial application args e.g. `x |> filter (> 5)` = `filter (> 5) x` */
+            while self.do_primary() && !matches!(self.peek(), Some(Token::Symbol(s)) if s == "|>") {
+                let a = self.parse_primary();
+                f = Node::Application { func: Box::new(f), arg: Box::new(a) };
+            }
+
+            node = Node::Application { func: Box::new(f), arg: Box::new(node) };
+        }
+
         node
     }
 
@@ -287,6 +302,7 @@ impl Parser {
     fn do_primary(&self) -> bool {
         match self.peek() {
             Some(Token::RParen | Token::RBracket | Token::Comma) => false,
+            Some(Token::Symbol(s)) if s == "|>" => false,
             Some(Token::LParen) => {
                 !matches!(self.tokens.get(self.pos + 1),
                     Some(Token::Symbol(s)) if matches!(s.as_str(), "fn" | "let" | "if"))
