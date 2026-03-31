@@ -32,8 +32,10 @@ A minimal, point-free functional Lisp. Auto-currying, operator sections, and rig
 
 # Recent Changes
 
-* Version 0.3.1
-* `std` is embedded into the binary.
+* Version 0.3.2
+* Refactored parser, runtime and intrinsics to use LamError
+* Moved `take` and `drop` to intrinsics, for performance.
+* TODO: Refactor runtime to use shared environments with `Rc<RefCell<>>` instead of cloning them.
 
 To import modules in the REPL or script files, simply run:
 ```

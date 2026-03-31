@@ -2,5 +2,3 @@
 (fn (product xs) (fold 1 (*) xs))
 (fn (any pred xs) (!= 0 (len (filter pred xs))))
 (fn (all pred xs) (== (len xs) (len (filter pred xs))))
-(fn (take n xs) (if (== n 0) [] (if (== (len xs) 0) [] (append [(head xs)] (take (- n 1) (tail xs))))))
-(fn (drop n xs) (match xs ([] []) ([h, ...t] (if (== n 0) xs (drop (- n 1) t)))))

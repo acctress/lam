@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 use std::fmt::Formatter;
 use include_dir::{include_dir, Dir};
+use crate::error::{LamError, LamResult};
 use crate::parser::{Node, Parser, Pattern};
 
 static STD_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/std");
 
-pub type IntrinsicFn = fn(&Runtime, Vec<Value>) -> Value;
+pub type IntrinsicFn = fn(&Runtime, Vec<Value>) -> LamResult<Value>;
 
 pub struct Intrinsic {
     pub name: &'static str,
@@ -51,30 +52,35 @@ impl Runtime {
         rt
     }
 
-    pub fn exec(&self, node: Node, env: &mut Env) -> Value {
+    pub fn exec(&self, node: Node, env: &mut Env) -> LamResult<Value> {
         self.eval(node, env)
     }
 
-    pub fn eval(&self, node: Node, env: &mut Env) -> Value {
+    pub fn eval(&self, node: Node, env: &mut Env) -> LamResult<Value> {
         match node {
-            Node::Literal(n) => Value::Num(n),
+            Node::Literal(n) => Ok(Value::Num(n)),
             Node::Atom(s) => {
-                if let Some(v) = env.get(&s) {
+                let x = if let Some(v) = env.get(&s) {
                     v.clone()
                 } else if self.intrinsics.contains_key(&s) {
                     self.lookup_intrinsic(&s)
                 } else {
                     Value::Str(s)
-                }
+                };
+
+                Ok(x)
             },
-            Node::List(items) => Value::List(items.into_iter().map(|n| self.eval(n, env)).collect()),
+            Node::List(items) => {
+                let v: LamResult<Vec<Value>> = items.into_iter().map(|n| self.eval(n, env)).collect();
+                Ok(Value::List(v?))
+            },
             Node::Partial { op, arg } => {
-                let fun = self.eval(Node::Atom(op), env);
-                self.apply(fun, self.eval(*arg, env))
+                let fun = self.eval(Node::Atom(op), env)?;
+                self.apply(fun, self.eval(*arg, env)?)
             },
-            Node::Application { func, arg } => self.apply(self.eval(*func, env), self.eval(*arg, env)),
+            Node::Application { func, arg } => self.apply(self.eval(*func, env)?, self.eval(*arg, env)?),
             Node::Let { name, value, body } => {
-                let v = self.eval(*value, env);
+                let v = self.eval(*value, env)?;
                 /* each let binding gets it's own scope */
                 let mut child = env.child();
                 child.set(name, v);
@@ -82,9 +88,9 @@ impl Runtime {
             },
             Node::If { cond, then, els } => {
                 match self.eval(*cond, env) {
-                    Value::Num(n) if n != 0f64 => self.eval(*then, env),
-                    Value::Num(_) => self.eval(*els, env),
-                    _ => panic!("if condition must evaluate to a number")
+                    Ok(Value::Num(n)) if n != 0f64 => self.eval(*then, env),
+                    Ok(Value::Num(_)) => self.eval(*els, env),
+                    _ => Err(LamError::new("If condition must evaluate to a number"))
                 }
             },
             Node::FnDef { name, params, body } => {
@@ -96,19 +102,19 @@ impl Runtime {
                     env: env.clone(),
                 }));
                 env.set(name, f);
-                Value::Nil
+               Ok( Value::Nil)
             },
             Node::LambdaDef { params, body } => {
-                Value::Func(Box::new(LamFunc::UDef {
+                Ok(Value::Func(Box::new(LamFunc::UDef {
                     name: String::new(),
                     o_params: params.clone(),
                     params,
                     body: *body,
                     env: env.clone()
-                }))
+                })))
             },
             Node::Match { expr, arms } => {
-                let val = self.eval(*expr, env);
+                let val = self.eval(*expr, env)?;
                 for arm in arms {
                     if let Some(bindings) = self.match_pattern(&arm.pattern, &val) {
                         let mut c = env.child();
@@ -118,7 +124,7 @@ impl Runtime {
 
                         if let Some(g) = arm.guard {
                             match self.eval(*g, &mut c) {
-                                Value::Num(n) if n != 0f64 => return self.eval(*arm.body, &mut c),
+                                Ok(Value::Num(n)) if n != 0f64 => return self.eval(*arm.body, &mut c),
                                 _ => continue,
                             }
                         }
@@ -127,10 +133,10 @@ impl Runtime {
                     }
                 }
 
-                panic!("non exhaustive match")
+                Err(LamError::new("non-exhaustive match"))
             },
             Node::UseModule { path } => {
-                let p = if path.ends_with(".lam") {
+                let p = if is_lam_file(&path) {
                     path.clone()
                 } else {
                     let mut s = path.clone();
@@ -138,14 +144,16 @@ impl Runtime {
                     s
                 };
 
-                let src = if p.starts_with("std/") {
-                    let em_path = &p["std/".len()..];
-                    if let Some(f) = STD_DIR.get_file(&em_path) {
+                let src = if let Some(em_path) = p.strip_prefix("std/") {
+                    if let Some(f) = STD_DIR.get_file(em_path) {
                         f.contents_utf8().expect("invalid utf8 in std file").to_string()
                     } else {
                         panic!("unknown std module '{em_path}'")
                     }
-                } else { std::fs::read_to_string(&p).expect("failed to read file") };
+                } else {
+                    std::fs::read_to_string(&p)
+                        .map_err(|e| LamError::new(format!("Failed to real module file: {e}")))?
+                };
 
                 let stripped: String = src.lines()
                     .map(|l| l.trim())
@@ -155,16 +163,16 @@ impl Runtime {
 
                 let mut parser = Parser::new(&stripped);
                 while parser.got_tokens() {
-                    let node = parser.parse_top_level();
-                    self.exec(node, env);
+                    let node = parser.parse_top_level()?;
+                    self.exec(node, env)?;
                 }
 
-                Value::Nil
+                Ok(Value::Nil)
             }
         }
     }
 
-    pub(crate) fn apply(&self, func: Value, arg: Value) -> Value {
+    pub(crate) fn apply(&self, func: Value, arg: Value) -> LamResult<Value> {
         match func {
             Value::Func(f) => match *f {
                 LamFunc::Intrinsic { name, mut args, arity } => {
@@ -174,12 +182,12 @@ impl Runtime {
                         self.call_intrinsic(&name, args)
                     } else {
                         /* auto curry ! */
-                        Value::Func(Box::new(LamFunc::Intrinsic { name, args, arity }))
+                       Ok( Value::Func(Box::new(LamFunc::Intrinsic { name, args, arity })))
                     }
                 }
 
                 LamFunc::Composition { outer, inner } => {
-                    let m = self.apply(Value::Func(Box::from(*inner)), arg);
+                    let m = self.apply(Value::Func(Box::from(*inner)), arg)?;
                     self.apply(Value::Func(Box::from(*outer)), m)
                 },
 
@@ -198,13 +206,13 @@ impl Runtime {
                         self.eval(body, &mut child)
                     } else {
                         /* auto curry! */
-                        Value::Func(Box::new(LamFunc::UDef {
+                        Ok(Value::Func(Box::new(LamFunc::UDef {
                             name,
                             o_params,
                             params: params[1..].to_vec(),
                             body,
                             env: child
-                        }))
+                        })))
                     }
                 }
             }
@@ -240,10 +248,10 @@ impl Runtime {
         }
     }
 
-    fn call_intrinsic(&self, name: &str, args: Vec<Value>) -> Value {
+    fn call_intrinsic(&self, name: &str, args: Vec<Value>) -> LamResult<Value> {
         match self.intrinsics.get(name) {
             Some((func, _)) => func(self, args),
-            None => panic!("unknown intrinsic '{name}'")
+            None => Err(LamError::new(format!("Unknown intrinsic '{name}'"))),
         }
     }
 
@@ -275,6 +283,12 @@ impl Env {
     pub fn get(&self, name: &str) -> Option<&Value> {
         self.bindings.get(name).or_else(|| self.parent.as_ref()?.get(name))
     }
+}
+
+fn is_lam_file(filename: &str) -> bool {
+    let filename = std::path::Path::new(filename);
+    filename.extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("lam"))
 }
 
 impl std::fmt::Display for Value {

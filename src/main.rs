@@ -1,10 +1,13 @@
 use std::io::{self, Write, BufRead, stdin};
+use ariadne::{Label, Report, ReportKind, Source};
+use crate::error::LamError;
 use crate::parser::Parser;
-use crate::runtime::{Env, Runtime};
+use crate::runtime::{Env, Runtime, Value};
 
 mod parser;
 mod runtime;
 mod intrinsics;
+mod error;
 
 const RESET: &str = "\x1b[0m";
 const RED: &str = "\x1b[38;5;211m";
@@ -21,19 +24,22 @@ fn main() {
     if args.len() > 1 {
         let src = std::fs::read_to_string(&args[1]).expect("failed to read file");
         let stripped: String = src.lines()
-            .map(|l| l.trim())
-            .filter(|l| !l.is_empty() && !l.starts_with("#"))
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
             .collect::<Vec<_>>()
             .join(" ");
 
         let mut parser = Parser::new(&stripped);
         while parser.got_tokens() {
-            let node = parser.parse_top_level();
-            rt.exec(node, &mut env);
+            match parser.parse_top_level().and_then(|node| rt.exec(node, &mut env)) {
+                Ok(_) => {},
+                Err(e) => {
+                    print_lam_error(&e, src.as_str());
+                    std::process::exit(1);
+                }
+            }
         }
     } else {
-        std::panic::set_hook(Box::new(|_| {}));
-
         loop {
             print!("{MAGENTA}λ{RESET} ");
             io::stdout().flush().unwrap();
@@ -46,31 +52,35 @@ fn main() {
             let input = l.trim();
             if input.is_empty() { continue; }
 
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let mut parser = Parser::new(input);
-                let node = parser.parse();
-                rt.exec(node, &mut env)
-            }));
-
-            match result {
+            let mut parser = Parser::new(input);
+            match parser.parse().and_then(|node| rt.exec(node, &mut env)) {
                 Ok(value) => match &value {
-                    runtime::Value::Num(_) => println!("{CYAN}→ {value}{RESET}"),
-                    runtime::Value::Str(_) => println!("{GREEN}→ {value}{RESET}"),
-                    runtime::Value::List(_) => println!("{YELLOW}→ {value}{RESET}"),
-                    runtime::Value::Func(_) | runtime::Value::Nil => {},
+                    Value::Num(_) => println!("{CYAN}→ {value}{RESET}"),
+                    Value::Str(_) => println!("{GREEN}→ {value}{RESET}"),
+                    Value::List(_) => println!("{YELLOW}→ {value}{RESET}"),
+                    Value::Func(_) | Value::Nil => {},
                 },
-                Err(e) => {
-                    let msg = if let Some(s) = e.downcast_ref::<String>() {
-                        s.as_str()
-                    } else if let Some(s) = e.downcast_ref::<&str>() {
-                        s
-                    } else {
-                        "unknown error"
-                    };
-
-                    println!("{RED}error: {msg}\x1b[0m");
-                }
+                Err(e) => print_lam_error(&e, input),
             }
+        }
+    }
+}
+
+fn print_lam_error(err: &LamError, input: &str) {
+    match err.span {
+        Some((start, end)) => {
+            Report::build(ReportKind::Error, ("input", start..end))
+                .with_message(&err.msg)
+                .with_label(
+                    Label::new(("input", start..end))
+                        .with_message(&err.msg)
+                )
+                .finish()
+                .eprint(("input", Source::from(input)))
+                .unwrap();
+        }
+        None => {
+            eprintln!("{RED}Error: {}{RESET}", err.msg);
         }
     }
 }

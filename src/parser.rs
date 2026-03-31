@@ -1,4 +1,5 @@
 use std::cmp::PartialEq;
+use crate::error::{LamError, LamResult};
 
 #[derive(Debug, PartialEq)]
 pub enum Token {
@@ -63,21 +64,21 @@ impl Parser {
         }
     }
 
-    pub fn parse(&mut self) -> Node {
+    pub fn parse(&mut self) -> LamResult<Node> {
         self.parse_expr()
     }
 
-    pub fn parse_top_level(&mut self) -> Node {  self.parse_primary()  }
+    pub fn parse_top_level(&mut self) -> LamResult<Node> {  self.parse_primary()  }
 
     pub(crate) fn got_tokens(&self) -> bool {
         self.pos < self.tokens.len()
     }
 
-    fn parse_expr(&mut self) -> Node {
-        let mut node = self.parse_primary();
+    fn parse_expr(&mut self) -> LamResult<Node> {
+        let mut node = self.parse_primary()?;
 
         while self.do_primary() {
-            let arg = self.parse_primary();
+            let arg = self.parse_primary()?;
             node = Node::Application { func: Box::from(node), arg: Box::new(arg) };
         }
 
@@ -85,21 +86,21 @@ impl Parser {
         while matches!(self.peek(), Some(Token::Symbol(s)) if s == "|>") {
             self.consume();
 
-            let mut f = self.parse_primary();
+            let mut f = self.parse_primary()?;
 
             /* get partial application args e.g. `x |> filter (> 5)` = `filter (> 5) x` */
             while self.do_primary() && !matches!(self.peek(), Some(Token::Symbol(s)) if s == "|>") {
-                let a = self.parse_primary();
+                let a = self.parse_primary()?;
                 f = Node::Application { func: Box::new(f), arg: Box::new(a) };
             }
 
             node = Node::Application { func: Box::new(f), arg: Box::new(node) };
         }
 
-        node
+        Ok(node)
     }
 
-    fn parse_primary(&mut self) -> Node {
+    fn parse_primary(&mut self) -> LamResult<Node> {
         match self.consume() {
             Some(token) => match token {
                 Token::LParen => {
@@ -111,28 +112,27 @@ impl Parser {
                         Some(Token::Symbol(s)) if s == "use" => self.parse_use(),
                         Some(Token::Symbol(s)) if !s.chars().next().unwrap().is_ascii_alphabetic() => self.parse_partial(),
                         _ => {
-                            let i = self.parse_expr();
-                            let pos = self.pos;
+                            let i = self.parse_expr()?;
                             match self.consume() {
                                 Some(Token::RParen) => {},
-                                t => panic!("expected ')' but got '{t:?}' at pos {pos}"),
+                                t => return Err(LamError::new(format!("Expected ')' but got '{t:?}'"))),
                             }
-                            i
+                            Ok(i)
                         }
                     }
                 },
                 Token::Lambda => self.parse_lambda(),
                 Token::LBracket => self.parse_list(),
-                Token::Number(n) => Node::Literal(*n),
-                Token::Char(c) => Node::Literal(f64::from(*c as u32)),
-                Token::Symbol(s) | Token::String(s) => Node::Atom(s.clone()),
-                _ => panic!("unexpected token '{token:?}'"),
+                Token::Number(n) => Ok(Node::Literal(*n)),
+                Token::Char(c) => Ok(Node::Literal(f64::from(*c as u32))),
+                Token::Symbol(s) | Token::String(s) => Ok(Node::Atom(s.clone())),
+                _ => Err(LamError::new(format!("Unexpected token '{token:?}'"))),
             }
-            _ => panic!("unexpected end of input")
+            _ => Err(LamError::new("Unexpected end of input")),
         }
     }
 
-    fn parse_partial(&mut self) -> Node {
+    fn parse_partial(&mut self) -> LamResult<Node> {
         let op = match self.consume() {
             Some(Token::Symbol(s)) => s.clone(),
             _ => panic!("expected operator in partial")
@@ -140,51 +140,51 @@ impl Parser {
 
         let mut args = vec![];
         while !matches!(self.peek(), Some(Token::RParen)) {
-            args.push(self.parse_primary());
+            args.push(self.parse_primary()?);
         }
 
         self.consume();
 
         match args.len() {
-            0 => Node::Atom(op),
-            1 => Node::Partial { op, arg: Box::new(args.pop().unwrap())},
+            0 => Ok(Node::Atom(op)),
+            1 => Ok(Node::Partial { op, arg: Box::new(args.pop().unwrap())}),
             2 => {
                 let r = args.pop().unwrap();
                 let l = args.pop().unwrap();
-                Node::Application {
+                Ok(Node::Application {
                     func: Box::new(Node::Partial { op, arg: Box::new(l) }),
                     arg: Box::new(r)
-                }
+                })
             }
-            _ => panic!("operation section takes one to two arguments")
+            _ => Err(LamError::new("Operation section takes one to two arguments"))
         }
     }
 
-    fn parse_list(&mut self) -> Node {
+    fn parse_list(&mut self) -> LamResult<Node> {
         let mut list: Vec<Node> = vec![];
 
         if matches!(self.peek(), Some(Token::RBracket)) {
             self.consume();
-            return Node::List(list);
+            return Ok(Node::List(list));
         }
 
-        let first_elem = self.parse_primary();
+        let first_elem = self.parse_primary()?;
 
         /* [x..y] or [x..y;z] */
         if matches!(self.peek(), Some(Token::Range)) {
             self.consume();
 
-            let to = self.parse_primary();
+            let to = self.parse_primary()?;
             let step = if matches!(self.peek(), Some(Token::Semi)) {
                 self.consume();
-                self.parse_primary()
+                self.parse_primary()?
             } else {
                 Node::Literal(1f64)
             };
 
             match self.consume() {
                 Some(Token::RBracket) => {},
-                _ => panic!("expected ']' to close range"),
+                _ => return Err(LamError::new("Expected ']' to close range")),
             }
 
             match (&first_elem, &to, &step) {
@@ -194,9 +194,9 @@ impl Parser {
                         list.push(Node::Literal(value));
                         value += s;
                     }
-                    return Node::List(list);
+                    return Ok(Node::List(list));
                 }
-                _ => panic!("range bounds must be numeric literals")
+                _ => return Err(LamError::new("Range bounds must be numeric literals"))
             }
         }
 
@@ -204,132 +204,132 @@ impl Parser {
 
         loop {
             match self.consume() {
-                Some(Token::RBracket) => return Node::List(list),
-                Some(Token::Comma) => list.push(self.parse_primary()),
-                _ => panic!("expected ',' or ']' in list"),
+                Some(Token::RBracket) => return Ok(Node::List(list)),
+                Some(Token::Comma) => list.push(self.parse_primary()?),
+                _ => return Err(LamError::new("Expected ',' or ']' in list")),
             }
         }
     }
 
-    fn parse_lambda(&mut self) -> Node {
+    fn parse_lambda(&mut self) -> LamResult<Node> {
         /* parse e.g. (\x -> (+ x 1)) */
         let mut params = vec![];
         while !matches!(self.peek(), Some(Token::Symbol(s)) if s == "->") {
             match self.consume() {
                 Some(Token::Symbol(s)) => params.push(s.clone()),
-                _ => panic!("expected parameter name in lambda"),
+                _ => return Err(LamError::new("Expected parameter name in lambda")),
             }
         }
 
         self.consume();
 
-        let body = self.parse_primary();
+        let body = self.parse_primary()?;
 
-        Node::LambdaDef { params, body: Box::new(body) }
+        Ok(Node::LambdaDef { params, body: Box::new(body) })
     }
 
-    fn parse_let(&mut self) -> Node {
+    fn parse_let(&mut self) -> LamResult<Node> {
         /* parse e.g. (let (x 5) (+ x 1)) */
         /* ( -> let -> (name value) -> body -> ) */
         self.consume();
 
         match self.consume() {
             Some(Token::LParen) => {},
-            _ => panic!("expected '(' after let")
+            _ => return Err(LamError::new("Expected '(' after 'let'"))
         }
 
         let name = match self.consume() {
             Some(Token::Symbol(s)) => s.clone(),
-            _ => panic!("expected variable name in let")
+            _ => return Err(LamError::new("Expected variable name in let"))
         };
 
-        let value = self.parse_expr();
+        let value = self.parse_expr()?;
 
         match self.consume() {
             Some(Token::RParen) => {},
-            _ => panic!("expected ')' after let binding")
+            _ => return Err(LamError::new("Expected ')' to close let binding"))
         }
 
-        let body = self.parse_expr();
+        let body = self.parse_expr()?;
 
         match self.consume() {
             Some(Token::RParen) => {},
-            _ => panic!("expected ')' to close let"),
+            _ => return Err(LamError::new("Expected ')' to close let")),
         }
 
-        Node::Let { name, value: Box::new(value), body: Box::new(body) }
+        Ok(Node::Let { name, value: Box::new(value), body: Box::new(body) })
     }
 
-    fn parse_fn(&mut self) -> Node {
+    fn parse_fn(&mut self) -> LamResult<Node> {
         /* parse e.g. (fn (double x) ((* 2) x)) */
         /* ( -> fn -> (name params) -> body -> ) */
         self.consume();
 
         match self.consume() {
             Some(Token::LParen) => {},
-            _ => panic!("expected '(' after fn"),
+            _ => return Err(LamError::new("Expected '(' after 'fn'")),
         }
 
         let name = match self.consume() {
             Some(Token::Symbol(s)) => s.clone(),
-            _ => panic!("expected function name"),
+            _ => return Err(LamError::new("Expected function name")),
         };
 
         let mut params = vec![];
         while !matches!(self.peek(), Some(Token::RParen)) {
             match self.consume() {
                 Some(Token::Symbol(s)) => params.push(s.clone()),
-                _ => panic!("expected parameter name"),
+                _ => return Err(LamError::new("Expected parameter name")),
             }
         }
 
         self.consume();
 
-        let body = self.parse_expr();
+        let body = self.parse_expr()?;
 
         match self.consume() {
             Some(Token::RParen) => {},
-            _ => panic!("expected ')' to close fn"),
+            _ => return Err(LamError::new("Expected ')' to close fn")),
         }
 
-        Node::FnDef { name, params, body: Box::new(body) }
+        Ok(Node::FnDef { name, params, body: Box::new(body) })
     }
 
-    fn parse_if(&mut self) -> Node {
+    fn parse_if(&mut self) -> LamResult<Node> {
         self.consume();
 
-        let cond = self.parse_primary();
-        let then = self.parse_primary();
-        let els = self.parse_primary();
+        let cond = self.parse_primary()?;
+        let then = self.parse_primary()?;
+        let els = self.parse_primary()?;
 
         match self.consume() {
             Some(Token::RParen) => {},
-            _ => panic!("expected ')' to close if"),
+            _ => return Err(LamError::new("Expected ')' to close if")),
         }
 
-        Node::If { cond: Box::new(cond), then: Box::new(then), els: Box::new(els) }
+        Ok(Node::If { cond: Box::new(cond), then: Box::new(then), els: Box::new(els) })
     }
 
-    fn parse_match(&mut self) -> Node {
+    fn parse_match(&mut self) -> LamResult<Node> {
         self.consume();
 
-        let scrutinee = self.parse_primary();
+        let scrutinee = self.parse_primary()?;
         let mut arms = vec![];
 
         while matches!(self.peek(), Some(Token::LParen)) {
             self.consume();
-            let pattern = self.parse_pattern();
+            let pattern = self.parse_pattern()?;
             let guard = if matches!(self.peek(), Some(Token::Symbol(s)) if s == "if") {
                 self.consume();
-                Some(Box::new(self.parse_primary()))
+                Some(Box::new(self.parse_primary()?))
             } else {
                 None
             };
 
-            let body = self.parse_primary();
+            let body = self.parse_primary()?;
             match self.consume() {
                 Some(Token::RParen) => {},
-                _ => panic!("expected ')' to close match arm")
+                _ => return Err(LamError::new("Expected ')' to close match arm")),
             }
 
             arms.push(MatchArm { pattern, guard, body: Box::new(body) });
@@ -337,45 +337,45 @@ impl Parser {
 
         match self.consume() {
             Some(Token::RParen) => {},
-            _ => panic!("expected ')' to close match")
+            _ => return Err(LamError::new("Expected ')' to close match")),
         }
 
-        Node::Match { expr: Box::new(scrutinee), arms }
+        Ok(Node::Match { expr: Box::new(scrutinee), arms })
     }
 
-    fn parse_use(&mut self) -> Node {
+    fn parse_use(&mut self) -> LamResult<Node> {
         self.consume();
         let path = match self.consume() {
             Some(Token::String(s)) => s.clone(),
-            _ => panic!("use expects a file path string"),
+            _ => return Err(LamError::new("Expected a string in 'use'")),
         };
         match self.consume() {
             Some(Token::RParen) => {},
-            _ => panic!("expected ')' to close use")
+            _ => return Err(LamError::new("Expected ')' to close use")),
         }
 
-        Node::UseModule { path }
+        Ok(Node::UseModule { path })
     }
 
-    fn parse_pattern(&mut self) -> Pattern {
+    fn parse_pattern(&mut self) -> LamResult<Pattern> {
         match self.consume() {
-            Some(Token::Number(n)) => Pattern::Literal(*n),
-            Some(Token::String(s)) => Pattern::StringLit(s.clone()),
-            Some(Token::Symbol(s)) if s == "_" => Pattern::Wildcard,
-            Some(Token::Symbol(s)) => Pattern::Var(s.clone()),
+            Some(Token::Number(n)) => Ok(Pattern::Literal(*n)),
+            Some(Token::String(s)) => Ok(Pattern::StringLit(s.clone())),
+            Some(Token::Symbol(s)) if s == "_" => Ok(Pattern::Wildcard),
+            Some(Token::Symbol(s)) => Ok(Pattern::Var(s.clone())),
             Some(Token::LBracket) => self.parse_list_pattern(),
-            _ => panic!("unexpected token in pattern")
+            _ => Err(LamError::new("Unexpected token in pattern.")),
         }
     }
 
-    fn parse_list_pattern(&mut self) -> Pattern {
+    fn parse_list_pattern(&mut self) -> LamResult<Pattern> {
         // println!("list pattern tokens: {&self.tokens[self.pos..]:?}");
         let mut patterns = vec![];
         let mut rest = None;
 
         if matches!(self.peek(), Some(Token::RBracket)) {
             self.consume();
-            return Pattern::List(patterns, rest);
+            return Ok(Pattern::List(patterns, rest));
         }
 
         loop {
@@ -383,16 +383,16 @@ impl Parser {
                 self.consume();
                 match self.consume() {
                     Some(Token::Symbol(s)) => rest = Some(s.clone()),
-                    _ => panic!("expected name after ...")
+                    _ => return Err(LamError::new("Expected name after '...' (spread)")),
                 }
             } else {
-                patterns.push(self.parse_pattern());
+                patterns.push(self.parse_pattern()?);
             }
 
             match self.consume() {
-                Some(Token::RBracket) => return Pattern::List(patterns, rest),
-                Some(Token::Comma) => continue,
-                _ => panic!("expected ',' or ']' in list pattern")
+                Some(Token::RBracket) => return Ok(Pattern::List(patterns, rest)),
+                Some(Token::Comma) => {},
+                _ => return Err(LamError::new("Expected ',' or ']' in list pattern.")),
             }
         }
     }
