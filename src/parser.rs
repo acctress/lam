@@ -70,7 +70,7 @@ impl Parser {
 
     pub fn parse_top_level(&mut self) -> LamResult<Node> {  self.parse_primary()  }
 
-    pub(crate) fn got_tokens(&self) -> bool {
+    pub fn got_tokens(&self) -> bool {
         self.pos < self.tokens.len()
     }
 

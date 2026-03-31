@@ -1,4 +1,5 @@
 /target
+/pkg
 /.idea
 /.idea/discord.xml
 /.idea/lam.iml

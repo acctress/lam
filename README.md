@@ -33,8 +33,7 @@ A minimal, point-free functional Lisp. Auto-currying, operator sections, and rig
 # Recent Changes
 
 * Version 0.3.22
-* `==` and `!=` now accept both numbers and strings as arguments.
-* panics in runtime.rs are replaced with LamError
+* Added `wasm-bindgen` to allow for wasm packing.
 
 To import modules in the REPL or script files, simply run:
 ```
