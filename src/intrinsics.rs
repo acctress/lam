@@ -47,7 +47,8 @@ fn eq(_rt: &Runtime, mut args: Vec<Value>) -> LamResult<Value> {
     let a = args.pop().unwrap();
     match (a, b) {
         (Value::Num(a), Value::Num(b)) => Ok(Value::Num(f64::from(a == b))),
-        _ => Err(LamError::new("== expects two numbers")),
+        (Value::Str(a), Value::Str(b)) => Ok(Value::Num(f64::from(a == b))),
+        _ => Err(LamError::new("== expects two values of the same type")),
     }
 }
 
@@ -97,7 +98,8 @@ fn ne(_rt: &Runtime, mut args: Vec<Value>) -> LamResult<Value> {
     let a = args.pop().unwrap();
     match (a, b) {
         (Value::Num(a), Value::Num(b)) => Ok(Value::Num(f64::from(a != b))),
-        _ => Err(LamError::new("!= expects two numbers")),
+        (Value::Str(a), Value::Str(b)) => Ok(Value::Num(f64::from(a != b))),
+        _ => Err(LamError::new("!= expects two values of the same type")),
     }
 }
 

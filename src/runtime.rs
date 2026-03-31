@@ -65,7 +65,7 @@ impl Runtime {
                 let x = if let Some(v) = env.borrow().get(&s) {
                     v.clone()
                 } else if self.intrinsics.contains_key(&s) {
-                    self.lookup_intrinsic(&s)
+                    self.lookup_intrinsic(&s)?
                 } else {
                     Value::Str(s)
                 };
@@ -218,7 +218,7 @@ impl Runtime {
                 }
             }
 
-            _ => panic!("tried to apply a non function!")
+            _ => Err(LamError::new("Cannot apply non function value"))
         }
     }
 
@@ -256,14 +256,15 @@ impl Runtime {
         }
     }
 
-    fn lookup_intrinsic(&self, name: &str) -> Value {
+    fn lookup_intrinsic(&self, name: &str) -> LamResult<Value> {
         match self.intrinsics.get(name) {
-            Some((_, arity)) => Value::Func(Box::new(LamFunc::Intrinsic {
+            Some((_, arity)) => Ok(Value::Func(Box::new(LamFunc::Intrinsic {
                 name: name.to_string(),
                 args: vec![],
                 arity: *arity
-            })),
-            None => panic!("unknown symbol '{name}'")
+            }))),
+
+            None => Err(LamError::new(format!("Unknown symbol '{name}'")))
         }
     }
 }

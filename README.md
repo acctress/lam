@@ -32,8 +32,9 @@ A minimal, point-free functional Lisp. Auto-currying, operator sections, and rig
 
 # Recent Changes
 
-* Version 0.3.21
-* Using Rc<RefCell<>> for environments.
+* Version 0.3.22
+* `==` and `!=` now accept both numbers and strings as arguments.
+* panics in runtime.rs are replaced with LamError
 
 To import modules in the REPL or script files, simply run:
 ```
