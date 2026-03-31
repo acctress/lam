@@ -1,4 +1,6 @@
+use std::cell::RefCell;
 use std::io::{self, Write, BufRead, stdin};
+use std::rc::Rc;
 use ariadne::{Label, Report, ReportKind, Source};
 use crate::error::LamError;
 use crate::parser::Parser;
@@ -17,7 +19,7 @@ const YELLOW: &str = "\x1b[38;5;228m";
 const MAGENTA: &str = "\x1b[38;5;219m";
 
 fn main() {
-    let mut env = Env::new();
+    let mut env = Rc::new(RefCell::new(Env::new()));
     let rt = Runtime::new();
 
     let args: Vec<String> = std::env::args().collect();
@@ -31,7 +33,7 @@ fn main() {
 
         let mut parser = Parser::new(&stripped);
         while parser.got_tokens() {
-            match parser.parse_top_level().and_then(|node| rt.exec(node, &mut env)) {
+            match parser.parse_top_level().and_then(|node| rt.exec(node, &env)) {
                 Ok(_) => {},
                 Err(e) => {
                     print_lam_error(&e, src.as_str());
@@ -53,7 +55,7 @@ fn main() {
             if input.is_empty() { continue; }
 
             let mut parser = Parser::new(input);
-            match parser.parse().and_then(|node| rt.exec(node, &mut env)) {
+            match parser.parse().and_then(|node| rt.exec(node, &env)) {
                 Ok(value) => match &value {
                     Value::Num(_) => println!("{CYAN}→ {value}{RESET}"),
                     Value::Str(_) => println!("{GREEN}→ {value}{RESET}"),

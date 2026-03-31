@@ -1,5 +1,7 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::Formatter;
+use std::rc::Rc;
 use include_dir::{include_dir, Dir};
 use crate::error::{LamError, LamResult};
 use crate::parser::{Node, Parser, Pattern};
@@ -19,7 +21,7 @@ inventory::collect!(Intrinsic);
 #[derive(Clone, Debug)]
 pub struct Env {
     bindings: HashMap<String, Value>,
-    parent: Option<Box<Env>>,
+    parent: Option<Rc<RefCell<Env>>>,
 }
 
 pub struct Runtime {
@@ -39,7 +41,7 @@ pub enum Value {
 pub enum LamFunc {
     Intrinsic { name: String, args: Vec<Value>, arity: usize },
     Composition { outer: Box<LamFunc>, inner: Box<LamFunc> },
-    UDef { name: String, o_params: Vec<String>, params: Vec<String>, body: Node, env: Env },     /* user defined */
+    UDef { name: String, o_params: Vec<String>, params: Vec<String>, body: Node, env: Rc<RefCell<Env>> },     /* user defined */
 }
 
 impl Runtime {
@@ -52,15 +54,15 @@ impl Runtime {
         rt
     }
 
-    pub fn exec(&self, node: Node, env: &mut Env) -> LamResult<Value> {
+    pub fn exec(&self, node: Node, env: &Rc<RefCell<Env>>) -> LamResult<Value> {
         self.eval(node, env)
     }
 
-    pub fn eval(&self, node: Node, env: &mut Env) -> LamResult<Value> {
+    pub fn eval(&self, node: Node, env: &Rc<RefCell<Env>>) -> LamResult<Value> {
         match node {
             Node::Literal(n) => Ok(Value::Num(n)),
             Node::Atom(s) => {
-                let x = if let Some(v) = env.get(&s) {
+                let x = if let Some(v) = env.borrow().get(&s) {
                     v.clone()
                 } else if self.intrinsics.contains_key(&s) {
                     self.lookup_intrinsic(&s)
@@ -81,9 +83,8 @@ impl Runtime {
             Node::Application { func, arg } => self.apply(self.eval(*func, env)?, self.eval(*arg, env)?),
             Node::Let { name, value, body } => {
                 let v = self.eval(*value, env)?;
-                /* each let binding gets it's own scope */
-                let mut child = env.child();
-                child.set(name, v);
+                let mut child = Env::child(env);
+                child.borrow_mut().set(name, v);
                 self.eval(*body, &mut child)
             },
             Node::If { cond, then, els } => {
@@ -99,9 +100,9 @@ impl Runtime {
                     o_params: params.clone(),
                     params,
                     body: *body,
-                    env: env.clone(),
+                    env: Rc::clone(env),
                 }));
-                env.set(name, f);
+                env.borrow_mut().set(name, f);
                Ok( Value::Nil)
             },
             Node::LambdaDef { params, body } => {
@@ -110,26 +111,26 @@ impl Runtime {
                     o_params: params.clone(),
                     params,
                     body: *body,
-                    env: env.clone()
+                    env: Rc::clone(env),
                 })))
             },
             Node::Match { expr, arms } => {
                 let val = self.eval(*expr, env)?;
                 for arm in arms {
                     if let Some(bindings) = self.match_pattern(&arm.pattern, &val) {
-                        let mut c = env.child();
+                        let mut c = Env::child(env);
                         for (k, v) in bindings {
-                            c.set(k, v);
+                            c.borrow_mut().set(k, v);
                         }
 
                         if let Some(g) = arm.guard {
-                            match self.eval(*g, &mut c) {
-                                Ok(Value::Num(n)) if n != 0f64 => return self.eval(*arm.body, &mut c),
+                            match self.eval(*g, &c) {
+                                Ok(Value::Num(n)) if n != 0f64 => return self.eval(*arm.body, &c),
                                 _ => continue,
                             }
                         }
 
-                        return self.eval(*arm.body, &mut c);
+                        return self.eval(*arm.body, &c);
                     }
                 }
 
@@ -192,18 +193,18 @@ impl Runtime {
                 },
 
                 LamFunc::UDef { name, o_params, params, body, env: closed } => {
-                    let mut child = closed.child();
-                    child.set(params[0].clone(), arg);
-                    child.set(name.clone(), Value::Func(Box::new(LamFunc::UDef {
+                    let mut child = Env::child(&closed);
+                    child.borrow_mut().set(params[0].clone(), arg);
+                    child.borrow_mut().set(name.clone(), Value::Func(Box::new(LamFunc::UDef {
                         name: name.clone(),
                         o_params: o_params.clone(),
                         params: o_params.clone(),
                         body: body.clone(),
-                        env: closed.clone()
+                        env: Rc::clone(&closed)
                     })));
 
                     if params.len() == 1 {
-                        self.eval(body, &mut child)
+                        self.eval(body, &child)
                     } else {
                         /* auto curry! */
                         Ok(Value::Func(Box::new(LamFunc::UDef {
@@ -272,16 +273,18 @@ impl Env {
         Env { bindings: HashMap::new(), parent: None }
     }
 
-    pub fn child(&self) -> Self {
-        Env { bindings: HashMap::new(), parent: Some(Box::new(self.clone())) }
+    pub fn child(thiz: &Rc<RefCell<Env>>) -> Rc<RefCell<Env>> {
+        Rc::new(RefCell::new(Env { bindings: HashMap::new(), parent: Some(Rc::clone(thiz)) }))
     }
 
     pub fn set(&mut self, name: String, value: Value) {
         self.bindings.insert(name, value);
     }
 
-    pub fn get(&self, name: &str) -> Option<&Value> {
-        self.bindings.get(name).or_else(|| self.parent.as_ref()?.get(name))
+    pub fn get(&self, name: &str) -> Option<Value> {
+        self.bindings.get(name).cloned().or_else(|| {
+            self.parent.as_ref()?.borrow().get(name)
+        })
     }
 }
 
