@@ -409,14 +409,13 @@ impl Parser {
 
     fn do_primary(&self) -> bool {
         match self.peek() {
-            Some(Token::RParen | Token::RBracket | Token::Comma) => false,
+            Some(Token::RParen | Token::RBracket | Token::Comma) | None => false,
             Some(Token::Symbol(s)) if s == "|>" => false,
             Some(Token::LParen) => {
                 !matches!(self.tokens.get(self.pos + 1),
                     Some(Token::Symbol(s)) if matches!(s.as_str(), "fn" | "let" | "if"))
             }
             Some(_) => true,
-            None => false,
         }
     }
 }

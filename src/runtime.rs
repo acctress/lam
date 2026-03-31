@@ -85,7 +85,7 @@ impl Runtime {
                 let v = self.eval(*value, env)?;
                 let mut child = Env::child(env);
                 child.borrow_mut().set(name, v);
-                self.eval(*body, &mut child)
+                self.eval(*body, &child)
             },
             Node::If { cond, then, els } => {
                 match self.eval(*cond, env) {
@@ -118,7 +118,7 @@ impl Runtime {
                 let val = self.eval(*expr, env)?;
                 for arm in arms {
                     if let Some(bindings) = self.match_pattern(&arm.pattern, &val) {
-                        let mut c = Env::child(env);
+                        let c = Env::child(env);
                         for (k, v) in bindings {
                             c.borrow_mut().set(k, v);
                         }
@@ -157,8 +157,8 @@ impl Runtime {
                 };
 
                 let stripped: String = src.lines()
-                    .map(|l| l.trim())
-                    .filter(|l| !l.is_empty() && !l.starts_with("#"))
+                    .map(str::trim)
+                    .filter(|l| !l.is_empty() && !l.starts_with('#'))
                     .collect::<Vec<_>>()
                     .join(" ");
 
@@ -193,7 +193,7 @@ impl Runtime {
                 },
 
                 LamFunc::UDef { name, o_params, params, body, env: closed } => {
-                    let mut child = Env::child(&closed);
+                    let child = Env::child(&closed);
                     child.borrow_mut().set(params[0].clone(), arg);
                     child.borrow_mut().set(name.clone(), Value::Func(Box::new(LamFunc::UDef {
                         name: name.clone(),

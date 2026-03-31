@@ -19,7 +19,7 @@ const YELLOW: &str = "\x1b[38;5;228m";
 const MAGENTA: &str = "\x1b[38;5;219m";
 
 fn main() {
-    let mut env = Rc::new(RefCell::new(Env::new()));
+    let env = Rc::new(RefCell::new(Env::new()));
     let rt = Runtime::new();
 
     let args: Vec<String> = std::env::args().collect();
