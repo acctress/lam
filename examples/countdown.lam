@@ -1,6 +1,6 @@
 (fn (count-down n)
 	(if (== n 0)
 		(putln "done!")
-		(count-down (- n 1))))
+	(count-down (- n 1))))
 
 (count-down 1000000)
