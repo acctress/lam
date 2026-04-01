@@ -20,12 +20,17 @@ inventory::collect!(Intrinsic);
 
 #[derive(Clone, Debug)]
 pub struct Env {
-    bindings: HashMap<String, Value>,
+    bindings: Vec<(String, Value)>,
     parent: Option<Rc<RefCell<Env>>>,
 }
 
 pub struct Runtime {
     intrinsics: HashMap<String, (IntrinsicFn, usize)>,
+}
+
+pub enum EvalResult {
+    Okay(Value),
+    TC { func: Box<LamFunc>, arg: Value }
 }
 
 #[derive(Clone, Debug)]
@@ -41,7 +46,13 @@ pub enum Value {
 pub enum LamFunc {
     Intrinsic { name: String, args: Vec<Value>, arity: usize },
     Composition { outer: Box<LamFunc>, inner: Box<LamFunc> },
-    UDef { name: String, o_params: Vec<String>, params: Vec<String>, body: Node, env: Rc<RefCell<Env>> },     /* user defined */
+    UDef {
+        name: String,
+        o_params: Vec<String>,
+        params: Vec<String>,
+        body: Rc<Node>,
+        env: Rc<RefCell<Env>>
+    },     /* user defined */
 }
 
 impl Runtime {
@@ -54,43 +65,58 @@ impl Runtime {
         rt
     }
 
-    pub fn exec(&self, node: Node, env: &Rc<RefCell<Env>>) -> LamResult<Value> {
-        self.eval(node, env)
+    pub fn exec(&self, node: &Node, env: &Rc<RefCell<Env>>) -> LamResult<Value> {
+        let mut r = self.eval(node, env)?;
+        loop {
+            match r {
+                EvalResult::Okay(v) => return Ok(v),
+                EvalResult::TC { func, arg } => {
+                    r = self.apply_inner(*func, arg)?
+                }
+            }
+        }
     }
 
-    pub fn eval(&self, node: Node, env: &Rc<RefCell<Env>>) -> LamResult<Value> {
+    pub fn eval(&self, node: &Node, env: &Rc<RefCell<Env>>) -> LamResult<EvalResult> {
         match node {
-            Node::Literal(n) => Ok(Value::Num(n)),
+            Node::Literal(n) => Ok(EvalResult::Okay(Value::Num(*n))),
             Node::Atom(s) => {
                 let x = if let Some(v) = env.borrow().get(&s) {
                     v.clone()
-                } else if self.intrinsics.contains_key(&s) {
+                } else if self.intrinsics.contains_key(s.as_str()) {
                     self.lookup_intrinsic(&s)?
                 } else {
-                    Value::Str(s)
+                    Value::Str(s.clone())
                 };
 
-                Ok(x)
+                Ok(EvalResult::Okay(x))
             },
             Node::List(items) => {
-                let v: LamResult<Vec<Value>> = items.into_iter().map(|n| self.eval(n, env)).collect();
-                Ok(Value::List(v?))
+                let v: LamResult<Vec<Value>> = items.into_iter().map(|n| self.to_value(n, env)).collect();
+                Ok(EvalResult::Okay(Value::List(v?)))
             },
             Node::Partial { op, arg } => {
-                let fun = self.eval(Node::Atom(op), env)?;
-                self.apply(fun, self.eval(*arg, env)?)
+                let fun = self.to_value(&Node::Atom(op.clone()), env)?;
+                Ok(EvalResult::Okay(self.apply(fun, self.to_value(&**arg, env)?)?))
             },
-            Node::Application { func, arg } => self.apply(self.eval(*func, env)?, self.eval(*arg, env)?),
+            Node::Application { func, arg } => {
+                let f = self.to_value(&**func, env)?;
+                let a = self.to_value(&**arg, env)?;
+                match f {
+                    Value::Func(ff) => Ok(EvalResult::TC { func: ff, arg: a }),
+                    _ => Err(LamError::new("Cannot apply non-function value"))
+                }
+            },
             Node::Let { name, value, body } => {
-                let v = self.eval(*value, env)?;
-                let mut child = Env::child(env);
-                child.borrow_mut().set(name, v);
-                self.eval(*body, &child)
+                let v = self.to_value(&**value, env)?;
+                let child = Env::child(env);
+                child.borrow_mut().set(name.clone(), v);
+                self.eval(&**body, &child)
             },
             Node::If { cond, then, els } => {
-                match self.eval(*cond, env) {
-                    Ok(Value::Num(n)) if n != 0f64 => self.eval(*then, env),
-                    Ok(Value::Num(_)) => self.eval(*els, env),
+                match self.to_value(&**cond, env) {
+                    Ok(Value::Num(n)) if n != 0f64 => self.eval(&**then, env),
+                    Ok(Value::Num(_)) => self.eval(&**els, env),
                     _ => Err(LamError::new("If condition must evaluate to a number"))
                 }
             },
@@ -98,24 +124,24 @@ impl Runtime {
                 let f = Value::Func(Box::new(LamFunc::UDef {
                     name: name.clone(), /* forgot about thiz */
                     o_params: params.clone(),
-                    params,
-                    body: *body,
+                    params: params.clone(),
+                    body: Rc::clone(body),
                     env: Rc::clone(env),
                 }));
-                env.borrow_mut().set(name, f);
-               Ok( Value::Nil)
+                env.borrow_mut().set(name.clone(), f);
+               Ok(EvalResult::Okay(Value::Nil))
             },
             Node::LambdaDef { params, body } => {
-                Ok(Value::Func(Box::new(LamFunc::UDef {
+                Ok(EvalResult::Okay(Value::Func(Box::new(LamFunc::UDef {
                     name: String::new(),
                     o_params: params.clone(),
-                    params,
-                    body: *body,
+                    params: params.clone(),
+                    body: Rc::clone(body),
                     env: Rc::clone(env),
-                })))
+                }))))
             },
             Node::Match { expr, arms } => {
-                let val = self.eval(*expr, env)?;
+                let val = self.to_value(&**expr, env)?;
                 for arm in arms {
                     if let Some(bindings) = self.match_pattern(&arm.pattern, &val) {
                         let c = Env::child(env);
@@ -123,14 +149,14 @@ impl Runtime {
                             c.borrow_mut().set(k, v);
                         }
 
-                        if let Some(g) = arm.guard {
-                            match self.eval(*g, &c) {
-                                Ok(Value::Num(n)) if n != 0f64 => return self.eval(*arm.body, &c),
+                        if let Some(g) = &arm.guard {
+                            match self.to_value(&*g, &c) {
+                                Ok(Value::Num(n)) if n != 0f64 => return self.eval(&*arm.body, &c),
                                 _ => continue,
                             }
                         }
 
-                        return self.eval(*arm.body, &c);
+                        return self.eval(&*arm.body, &c);
                     }
                 }
 
@@ -165,60 +191,88 @@ impl Runtime {
                 let mut parser = Parser::new(&stripped);
                 while parser.got_tokens() {
                     let node = parser.parse_top_level()?;
-                    self.exec(node, env)?;
+                    self.exec(&node, env)?;
                 }
 
-                Ok(Value::Nil)
+                Ok(EvalResult::Okay(Value::Nil))
+            }
+        }
+    }
+
+    fn to_value(&self, node: &Node, env: &Rc<RefCell<Env>>) -> LamResult<Value> {
+        let mut r = self.eval(node, env)?;
+        loop {
+            match r {
+                EvalResult::Okay(v) => return Ok(v),
+                EvalResult::TC { func, arg } => {
+                    r = self.apply_inner(*func, arg)?;
+                }
             }
         }
     }
 
     pub(crate) fn apply(&self, func: Value, arg: Value) -> LamResult<Value> {
         match func {
-            Value::Func(f) => match *f {
-                LamFunc::Intrinsic { name, mut args, arity } => {
-                    args.push(arg);
-
-                    if args.len() == arity {
-                        self.call_intrinsic(&name, args)
-                    } else {
-                        /* auto curry ! */
-                       Ok( Value::Func(Box::new(LamFunc::Intrinsic { name, args, arity })))
-                    }
-                }
-
-                LamFunc::Composition { outer, inner } => {
-                    let m = self.apply(Value::Func(Box::from(*inner)), arg)?;
-                    self.apply(Value::Func(Box::from(*outer)), m)
-                },
-
-                LamFunc::UDef { name, o_params, params, body, env: closed } => {
-                    let child = Env::child(&closed);
-                    child.borrow_mut().set(params[0].clone(), arg);
-                    child.borrow_mut().set(name.clone(), Value::Func(Box::new(LamFunc::UDef {
-                        name: name.clone(),
-                        o_params: o_params.clone(),
-                        params: o_params.clone(),
-                        body: body.clone(),
-                        env: Rc::clone(&closed)
-                    })));
-
-                    if params.len() == 1 {
-                        self.eval(body, &child)
-                    } else {
-                        /* auto curry! */
-                        Ok(Value::Func(Box::new(LamFunc::UDef {
-                            name,
-                            o_params,
-                            params: params[1..].to_vec(),
-                            body,
-                            env: child
-                        })))
+            Value::Func(f ) => {
+                let mut r = self.apply_inner(*f, arg)?;
+                loop {
+                    match r {
+                        EvalResult::Okay(v) => return Ok(v),
+                        EvalResult::TC { func, arg } => {
+                            r = self.apply_inner(*func, arg)?;
+                        }
                     }
                 }
             }
+            _ => Err(LamError::new("Cannot apply non-function value")),
+        }
+    }
 
-            _ => Err(LamError::new("Cannot apply non function value"))
+    fn apply_inner(&self, innner: LamFunc, arg: Value) -> LamResult<EvalResult> {
+        match innner {
+            LamFunc::Intrinsic { name, mut args, arity } => {
+                args.push(arg);
+
+                if args.len() == arity {
+                    Ok(EvalResult::Okay(self.call_intrinsic(&name, args)?))
+                } else {
+                    Ok(EvalResult::Okay(Value::Func(
+                        Box::new(LamFunc::Intrinsic {
+                            name, args, arity
+                        })
+                    )))
+                }
+            },
+
+            LamFunc::Composition { outer, inner } => {
+                let m = self.apply(Value::Func(Box::from(*inner)), arg)?;
+                Ok(EvalResult::TC { func: outer, arg: m })
+            },
+
+            LamFunc::UDef { name, o_params, params, body, env: closed } => {
+                let child = Env::child(&closed);
+
+                child.borrow_mut().set(params[0].clone(), arg);
+                child.borrow_mut().set(name.clone(), Value::Func(Box::new(LamFunc::UDef {
+                    name: name.clone(),
+                    o_params: o_params.clone(),
+                    params: o_params.clone(),
+                    body: Rc::clone(&body),
+                    env: Rc::clone(&closed)
+                })));
+
+                if params.len() == 1 {
+                    self.eval(&body, &child)
+                } else {
+                    Ok(EvalResult::Okay(Value::Func(Box::new(LamFunc::UDef {
+                        name,
+                        o_params,
+                        params: params[1..].to_vec(),
+                        body,
+                        env: child,
+                    }))))
+                }
+            }
         }
     }
 
@@ -271,21 +325,26 @@ impl Runtime {
 
 impl Env {
     pub fn new() -> Self {
-        Env { bindings: HashMap::new(), parent: None }
+        Env { bindings: Vec::new(), parent: None }
     }
 
     pub fn child(thiz: &Rc<RefCell<Env>>) -> Rc<RefCell<Env>> {
-        Rc::new(RefCell::new(Env { bindings: HashMap::new(), parent: Some(Rc::clone(thiz)) }))
+        Rc::new(RefCell::new(Env { bindings: Vec::new(), parent: Some(Rc::clone(thiz)) }))
     }
 
     pub fn set(&mut self, name: String, value: Value) {
-        self.bindings.insert(name, value);
+        if let Some(s) = self.bindings.iter_mut().find(|(k, _)| k == &name) {
+            s.1 = value;
+        } else {
+            self.bindings.push((name, value));
+        }
     }
 
     pub fn get(&self, name: &str) -> Option<Value> {
-        self.bindings.get(name).cloned().or_else(|| {
-            self.parent.as_ref()?.borrow().get(name)
-        })
+        self.bindings.iter().rev()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.clone())
+            .or_else(|| self.parent.as_ref()?.borrow().get(name))
     }
 }
 
@@ -299,7 +358,7 @@ impl std::fmt::Display for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Value::Num(n) => write!(f, "{n}"),
-            Value::Str(s) => write!(f, "\"{s}\""),
+            Value::Str(s) => write!(f, "{s}"),
             Value::List(items) => {
                 write!(f, "[")?;
                 for (i, item) in items.iter().enumerate() {

@@ -33,8 +33,13 @@ fn main() {
 
         let mut parser = Parser::new(&stripped);
         while parser.got_tokens() {
-            match parser.parse_top_level().and_then(|node| rt.exec(node, &env)) {
-                Ok(_) => {},
+            match parser.parse_top_level() {
+                Ok(node) => {
+                    if let Err(e) = rt.exec(&node, &env) {
+                        print_lam_error(&e, src.as_str());
+                        std::process::exit(1);
+                    }
+                },
                 Err(e) => {
                     print_lam_error(&e, src.as_str());
                     std::process::exit(1);
@@ -55,12 +60,15 @@ fn main() {
             if input.is_empty() { continue; }
 
             let mut parser = Parser::new(input);
-            match parser.parse().and_then(|node| rt.exec(node, &env)) {
-                Ok(value) => match &value {
-                    Value::Num(_) => println!("{CYAN}→ {value}{RESET}"),
-                    Value::Str(_) => println!("{GREEN}→ {value}{RESET}"),
-                    Value::List(_) => println!("{YELLOW}→ {value}{RESET}"),
-                    Value::Func(_) | Value::Nil => {},
+            match parser.parse() {
+                Ok(node) => match rt.exec(&node, &env) {
+                    Ok(value) => match &value {
+                        Value::Num(_) => println!("{CYAN}→ {value}{RESET}"),
+                        Value::Str(_) => println!("{GREEN}→ {value}{RESET}"),
+                        Value::List(_) => println!("{YELLOW}→ {value}{RESET}"),
+                        Value::Func(_) | Value::Nil => {},
+                    },
+                    Err(e ) => print_lam_error(&e, input),
                 },
                 Err(e) => print_lam_error(&e, input),
             }

@@ -25,8 +25,11 @@ pub fn eval(input: &str) -> String {
     let mut last_value = String::new();
 
     while parser.got_tokens() {
-        match parser.parse_top_level().and_then(|node| rt.exec(node, &env)) {
-            Ok(v) => last_value = v.to_string(),
+        match parser.parse_top_level() {
+            Ok(v) => match rt.exec(&v, &env) {
+                Ok(value) => last_value = value.to_string(),
+                Err(e) => return format!("Error: {}", e.msg),
+            },
             Err(e) => return format!("Error: {}", e.msg),
         }
     }

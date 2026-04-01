@@ -1,4 +1,5 @@
 use std::cmp::PartialEq;
+use std::rc::Rc;
 use crate::error::{LamError, LamResult};
 
 #[derive(Debug, PartialEq)]
@@ -43,8 +44,8 @@ pub enum Node {
     List(Vec<Node>),
     Let { name: String, value: Box<Node>, body: Box<Node> },
     If { cond: Box<Node>, then: Box<Node>, els: Box<Node> },
-    FnDef { name: String, params: Vec<String>, body: Box<Node> },
-    LambdaDef { params: Vec<String>, body: Box<Node> },
+    FnDef { name: String, params: Vec<String>, body: Rc<Node> },
+    LambdaDef { params: Vec<String>, body: Rc<Node> },
     Match { expr: Box<Node>, arms: Vec<MatchArm> },
     UseModule { path: String },
 }
@@ -225,7 +226,7 @@ impl Parser {
 
         let body = self.parse_primary()?;
 
-        Ok(Node::LambdaDef { params, body: Box::new(body) })
+        Ok(Node::LambdaDef { params, body: Rc::new(body) })
     }
 
     fn parse_let(&mut self) -> LamResult<Node> {
@@ -292,7 +293,7 @@ impl Parser {
             _ => return Err(LamError::new("Expected ')' to close fn")),
         }
 
-        Ok(Node::FnDef { name, params, body: Box::new(body) })
+        Ok(Node::FnDef { name, params, body: Rc::new(body) })
     }
 
     fn parse_if(&mut self) -> LamResult<Node> {
