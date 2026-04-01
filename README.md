@@ -32,10 +32,9 @@ A minimal, point-free functional Lisp. Auto-currying, operator sections, and rig
 
 # Recent Changes
 
-* Version 0.3.3
-* Added `EvalResult` for evaluation.
-* Added tail call optimisation for function calls.
-* Refactored a lot of data structures to improve performance, added a `countdown.lam` example to test performance.
+* Version 0.3.4
+* Added `true` and `false` symbols.
+* Added `&&`, `||`, and `!` intrinsics.
 
 To import modules in the REPL or script files, simply run:
 ```

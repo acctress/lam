@@ -38,6 +38,7 @@ pub enum Pattern {
 #[derive(Debug, Clone)]
 pub enum Node {
     Literal(f64),
+    Bool(bool),
     Atom(String),
     Partial { op: String, arg: Box<Node> },
     Application { func: Box<Node>, arg: Box<Node> },
@@ -126,6 +127,7 @@ impl Parser {
                 Token::LBracket => self.parse_list(),
                 Token::Number(n) => Ok(Node::Literal(*n)),
                 Token::Char(c) => Ok(Node::Literal(f64::from(*c as u32))),
+                Token::Symbol(s) if matches!(s.as_str(), "true" | "false") => Ok(Node::Bool(matches!(s.as_str(), "true"))),
                 Token::Symbol(s) | Token::String(s) => Ok(Node::Atom(s.clone())),
                 _ => Err(LamError::new(format!("Unexpected token '{token:?}'"))),
             }

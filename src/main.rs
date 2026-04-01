@@ -65,7 +65,7 @@ fn main() {
                     Ok(value) => match &value {
                         Value::Num(_) => println!("{CYAN}→ {value}{RESET}"),
                         Value::Str(_) => println!("{GREEN}→ {value}{RESET}"),
-                        Value::List(_) => println!("{YELLOW}→ {value}{RESET}"),
+                        Value::List(_) | Value::Bool(_) => println!("{YELLOW}→ {value}{RESET}"),
                         Value::Func(_) | Value::Nil => {},
                     },
                     Err(e ) => print_lam_error(&e, input),

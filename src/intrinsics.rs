@@ -46,8 +46,8 @@ fn eq(_rt: &Runtime, mut args: Vec<Value>) -> LamResult<Value> {
     let b = args.pop().unwrap();
     let a = args.pop().unwrap();
     match (a, b) {
-        (Value::Num(a), Value::Num(b)) => Ok(Value::Num(f64::from(a == b))),
-        (Value::Str(a), Value::Str(b)) => Ok(Value::Num(f64::from(a == b))),
+        (Value::Num(a), Value::Num(b)) => Ok(Value::Bool(a == b)),
+        (Value::Str(a), Value::Str(b)) => Ok(Value::Bool(a == b)),
         _ => Err(LamError::new("== expects two values of the same type")),
     }
 }
@@ -57,7 +57,7 @@ fn gt(_rt: &Runtime, mut args: Vec<Value>) -> LamResult<Value> {
     let b = args.pop().unwrap();
     let a = args.pop().unwrap();
     match (a, b) {
-        (Value::Num(a), Value::Num(b)) => Ok(Value::Num(f64::from(a > b))),
+        (Value::Num(a), Value::Num(b)) => Ok(Value::Bool(a > b)),
         _ => Err(LamError::new("> expects two numbers")),
     }
 }
@@ -67,7 +67,7 @@ fn lt(_rt: &Runtime, mut args: Vec<Value>) -> LamResult<Value> {
     let b = args.pop().unwrap();
     let a = args.pop().unwrap();
     match (a, b) {
-        (Value::Num(a), Value::Num(b)) => Ok(Value::Num(f64::from(a < b))),
+        (Value::Num(a), Value::Num(b)) => Ok(Value::Bool(a < b)),
         _ => Err(LamError::new("< expects two numbers")),
     }
 }
@@ -77,7 +77,7 @@ fn gte(_rt: &Runtime, mut args: Vec<Value>) -> LamResult<Value> {
     let b = args.pop().unwrap();
     let a = args.pop().unwrap();
     match (a, b) {
-        (Value::Num(a), Value::Num(b)) => Ok(Value::Num(f64::from(a >= b))),
+        (Value::Num(a), Value::Num(b)) => Ok(Value::Bool(a >= b)),
         _ => Err(LamError::new(">= expects two numbers")),
     }
 }
@@ -87,7 +87,7 @@ fn lte(_rt: &Runtime, mut args: Vec<Value>) -> LamResult<Value> {
     let b = args.pop().unwrap();
     let a = args.pop().unwrap();
     match (a, b) {
-        (Value::Num(a), Value::Num(b)) => Ok(Value::Num(f64::from(a <= b))),
+        (Value::Num(a), Value::Num(b)) => Ok(Value::Bool(a <= b)),
         _ => Err(LamError::new("<= expects two numbers")),
     }
 }
@@ -97,9 +97,40 @@ fn ne(_rt: &Runtime, mut args: Vec<Value>) -> LamResult<Value> {
     let b = args.pop().unwrap();
     let a = args.pop().unwrap();
     match (a, b) {
-        (Value::Num(a), Value::Num(b)) => Ok(Value::Num(f64::from(a != b))),
-        (Value::Str(a), Value::Str(b)) => Ok(Value::Num(f64::from(a != b))),
+        (Value::Num(a), Value::Num(b)) => Ok(Value::Bool(a != b)),
+        (Value::Str(a), Value::Str(b)) => Ok(Value::Bool(a != b)),
         _ => Err(LamError::new("!= expects two values of the same type")),
+    }
+}
+
+inventory::submit!(Intrinsic { name: "&&", arity: 2, func: and });
+fn and(_rt: &Runtime, mut args: Vec<Value>) -> LamResult<Value> {
+    let b = args.pop().unwrap();
+    let a = args.pop().unwrap();
+    match (a, b) {
+        (Value::Num(a), Value::Num(b)) => Ok(Value::Bool((a == 1.0) && (b == 1.0))),
+        (Value::Bool(a), Value::Bool(b)) => Ok(Value::Bool(a && b)),
+        _ => Err(LamError::new("&& expects two values of the same type")),
+    }
+}
+
+inventory::submit!(Intrinsic { name: "||", arity: 2, func: or });
+fn or(_rt: &Runtime, mut args: Vec<Value>) -> LamResult<Value> {
+    let b = args.pop().unwrap();
+    let a = args.pop().unwrap();
+    match (a, b) {
+        (Value::Num(a), Value::Num(b)) => Ok(Value::Bool((a == 1.0) || (b == 1.0))),
+        (Value::Bool(a), Value::Bool(b)) => Ok(Value::Bool(a || b)),
+        _ => Err(LamError::new("|| expects two values of the same type")),
+    }
+}
+
+inventory::submit!(Intrinsic { name: "!", arity: 1, func: not });
+fn not(_rt: &Runtime, mut args: Vec<Value>) -> LamResult<Value> {
+    let a = args.pop().unwrap();
+    match a {
+        Value::Bool(a) => Ok(Value::Bool(!a)),
+        _ => Err(LamError::new("! expects one boolean value")),
     }
 }
 

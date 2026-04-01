@@ -37,6 +37,7 @@ pub enum EvalResult {
 pub enum Value {
     Nil,
     Num(f64),
+    Bool(bool),
     Str(String),
     List(Vec<Value>),
     Func(Box<LamFunc>),
@@ -80,6 +81,7 @@ impl Runtime {
     pub fn eval(&self, node: &Node, env: &Rc<RefCell<Env>>) -> LamResult<EvalResult> {
         match node {
             Node::Literal(n) => Ok(EvalResult::Okay(Value::Num(*n))),
+            Node::Bool(b) => Ok(EvalResult::Okay(Value::Bool(*b))),
             Node::Atom(s) => {
                 let x = if let Some(v) = env.borrow().get(&s) {
                     v.clone()
@@ -359,6 +361,7 @@ impl std::fmt::Display for Value {
         match self {
             Value::Num(n) => write!(f, "{n}"),
             Value::Str(s) => write!(f, "{s}"),
+            Value::Bool(b) => write!(f, "{b}"),
             Value::List(items) => {
                 write!(f, "[")?;
                 for (i, item) in items.iter().enumerate() {
