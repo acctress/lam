@@ -1,7 +1,7 @@
 # lam
 A minimal, point-free functional Lisp. Auto-currying, operator sections, and right-to-left function composition.
 
-```
+```lisp
 (fn (qsort xs)
     (if (== (len xs) 0) []
         (let (pivot (head xs))
