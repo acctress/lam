@@ -32,9 +32,8 @@ A minimal, point-free functional Lisp. Auto-currying, operator sections, and rig
 
 # Recent Changes
 
-* Version 0.3.4
-* Added `true` and `false` symbols.
-* Added `&&`, `||`, and `!` intrinsics.
+* Version 0.3.5
+* Using `lam-parser` which utilises `iota-parser`
 
 To import modules in the REPL or script files, simply run:
 ```

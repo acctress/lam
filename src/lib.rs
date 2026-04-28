@@ -1,14 +1,13 @@
-use wasm_bindgen::prelude::*;
-use std::rc::Rc;
-use std::cell::RefCell;
-
-mod parser;
 mod runtime;
 mod intrinsics;
 mod error;
 
-use parser::Parser;
+use wasm_bindgen::prelude::*;
+use std::rc::Rc;
+use std::cell::RefCell;
+use lam_parser::parse_source;
 use runtime::{Env, Runtime};
+
 
 #[wasm_bindgen]
 pub fn eval(input: &str) -> String {
@@ -21,15 +20,11 @@ pub fn eval(input: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ");
 
-    let mut parser = Parser::new(&stripped);
     let mut last_value = String::new();
-
-    while parser.got_tokens() {
-        match parser.parse_top_level() {
-            Ok(v) => match rt.exec(&v, &env) {
-                Ok(value) => last_value = value.to_string(),
-                Err(e) => return format!("Error: {}", e.msg),
-            },
+    let nodes = parse_source(&stripped);
+    for node in nodes {
+        match rt.exec(&node, &env) {
+            Ok(value) => last_value = value.to_string(),
             Err(e) => return format!("Error: {}", e.msg),
         }
     }

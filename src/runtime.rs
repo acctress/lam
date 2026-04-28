@@ -4,7 +4,7 @@ use std::fmt::Formatter;
 use std::rc::Rc;
 use include_dir::{include_dir, Dir};
 use crate::error::{LamError, LamResult};
-use crate::parser::{Node, Parser, Pattern};
+use lam_parser::{Node, Pattern};
 
 static STD_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/std");
 
@@ -133,7 +133,7 @@ impl Runtime {
                 env.borrow_mut().set(name.clone(), f);
                Ok(EvalResult::Okay(Value::Nil))
             },
-            Node::LambdaDef { params, body } => {
+            Node::Lambda { params, body } => {
                 Ok(EvalResult::Okay(Value::Func(Box::new(LamFunc::UDef {
                     name: String::new(),
                     o_params: params.clone(),
@@ -190,13 +190,19 @@ impl Runtime {
                     .collect::<Vec<_>>()
                     .join(" ");
 
-                let mut parser = Parser::new(&stripped);
-                while parser.got_tokens() {
-                    let node = parser.parse_top_level()?;
+                for node in lam_parser::parse_source(&stripped) {
                     self.exec(&node, env)?;
                 }
 
                 Ok(EvalResult::Okay(Value::Nil))
+            },
+            Node::Pipe { lhs, rhs } => {
+                let arg = self.to_value(&**lhs, env)?;
+                let func = self.to_value(&**rhs, env)?;
+                match func {
+                    Value::Func(f) => Ok(EvalResult::TC { func: f, arg }),
+                    _ => Err(LamError::new("Cannot pipe into non-function value")),
+                }
             }
         }
     }

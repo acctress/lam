@@ -1,15 +1,15 @@
+mod runtime;
+mod intrinsics;
+mod error;
+
 use std::cell::RefCell;
 use std::io::{self, Write, BufRead, stdin};
 use std::rc::Rc;
 use ariadne::{Label, Report, ReportKind, Source};
 use crate::error::LamError;
-use crate::parser::Parser;
+use lam_parser::parse_source;
 use crate::runtime::{Env, Runtime, Value};
 
-mod parser;
-mod runtime;
-mod intrinsics;
-mod error;
 
 const RESET: &str = "\x1b[0m";
 const RED: &str = "\x1b[38;5;211m";
@@ -31,19 +31,11 @@ fn main() {
             .collect::<Vec<_>>()
             .join(" ");
 
-        let mut parser = Parser::new(&stripped);
-        while parser.got_tokens() {
-            match parser.parse_top_level() {
-                Ok(node) => {
-                    if let Err(e) = rt.exec(&node, &env) {
-                        print_lam_error(&e, src.as_str());
-                        std::process::exit(1);
-                    }
-                },
-                Err(e) => {
-                    print_lam_error(&e, src.as_str());
-                    std::process::exit(1);
-                }
+        let nodes = parse_source(&stripped);
+        for node in nodes {
+            if let Err(e) = rt.exec(&node, &env) {
+                print_lam_error(&e, src.as_str());
+                std::process::exit(1);
             }
         }
     } else {
@@ -59,18 +51,17 @@ fn main() {
             let input = l.trim();
             if input.is_empty() { continue; }
 
-            let mut parser = Parser::new(input);
-            match parser.parse() {
-                Ok(node) => match rt.exec(&node, &env) {
+            match lam_parser::parse_expr(input) {
+                Some(node) => match rt.exec(&node, &env) {
                     Ok(value) => match &value {
                         Value::Num(_) => println!("{CYAN}→ {value}{RESET}"),
                         Value::Str(_) => println!("{GREEN}→ {value}{RESET}"),
                         Value::List(_) | Value::Bool(_) => println!("{YELLOW}→ {value}{RESET}"),
                         Value::Func(_) | Value::Nil => {},
                     },
-                    Err(e ) => print_lam_error(&e, input),
+                    Err(e) => print_lam_error(&e, input),
                 },
-                Err(e) => print_lam_error(&e, input),
+                None => eprintln!("{RED}Error: parse failed{RESET}")
             }
         }
     }
